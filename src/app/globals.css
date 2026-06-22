@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #0f172a;
+  --color-ink-light: #1e293b;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-emerald: #10b981;
+  --color-emerald-soft: #d1fae5;
+  --color-amber: #f59e0b;
+  --color-amber-soft: #fef3c7;
+  --color-slate: #64748b;
+  --color-slate-light: #94a3b8;
+  --color-vip: #7c3aed;
+  --color-vip-soft: #ede9fe;
+}
+
+@theme inline {
+  --font-display: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-canvas-soft);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ticket-perforation {
+  position: relative;
+}
+.ticket-perforation::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  background: var(--color-canvas-soft);
+  border-radius: 50%;
+}
+.ticket-perforation::after {
+  content: "";
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  background: var(--color-canvas-soft);
+  border-radius: 50%;
+}
