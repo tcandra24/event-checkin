@@ -42,11 +42,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
 
   const filtered = useMemo(() => {
     return participants.filter((p) => {
-      const matchSearch =
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.phone.includes(search) ||
-        p.seat_number.toLowerCase().includes(search.toLowerCase()) ||
-        p.family_group.toLowerCase().includes(search.toLowerCase());
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search) || p.seat_number.toLowerCase().includes(search.toLowerCase()) || p.family_group.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || p.status === statusFilter;
       const matchFamily = familyFilter === "all" || p.family_group === familyFilter;
       return matchSearch && matchStatus && matchFamily;
@@ -67,18 +63,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
   }
 
   function handleExportCsv() {
-    const headers = [
-      "Nama",
-      "No HP",
-      "Nomor Kursi",
-      "Keluarga",
-      "Qty",
-      "Status Kehadiran",
-      "Waktu Check-in",
-      "Status RSVP",
-      "Jumlah RSVP",
-      "Kode",
-    ];
+    const headers = ["Nama", "No HP", "Nomor Kursi", "Keluarga", "Qty", "Status Kehadiran", "Waktu Check-in", "Status RSVP", "Jumlah RSVP", "Kode"];
     const rows = filtered.map((p) => [
       p.name,
       formatPhoneDisplay(p.phone),
@@ -92,9 +77,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       p.code,
     ]);
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
 
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -105,24 +88,16 @@ export function LaporanClient({ participants }: { participants: Participant[] })
     URL.revokeObjectURL(url);
   }
 
-  const attendanceRate =
-    stats.totalPeople > 0 ? Math.round((stats.hadirPeople / stats.totalPeople) * 100) : 0;
+  const attendanceRate = stats.totalPeople > 0 ? Math.round((stats.hadirPeople / stats.totalPeople) * 100) : 0;
 
   return (
     <div className="px-8 py-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-(--color-ink)">
-            Laporan Kehadiran
-          </h1>
-          <p className="mt-1 text-sm text-(--color-slate)">
-            Pantau peserta yang sudah dan belum hadir secara real-time.
-          </p>
+          <h1 className="font-display text-2xl font-semibold text-(--color-ink)">Laporan Kehadiran</h1>
+          <p className="mt-1 text-sm text-(--color-slate)">Pantau peserta yang sudah dan belum hadir secara real-time.</p>
         </div>
-        <button
-          onClick={handleExportCsv}
-          className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-white px-4 py-2.5 text-sm font-semibold text-(--color-ink) shadow-sm hover:bg-slate-50"
-        >
+        <button onClick={handleExportCsv} className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-white px-4 py-2.5 text-sm font-semibold text-(--color-ink) shadow-sm hover:bg-slate-50">
           <Download className="h-4 w-4" />
           Ekspor CSV
         </button>
@@ -134,21 +109,15 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <p className="text-sm font-medium text-(--color-slate)">Total Tamu</p>
             <Users2 className="h-4 w-4 text-(--color-slate-light)" />
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold text-(--color-ink)">
-            {stats.totalPeople}
-          </p>
-          <p className="mt-1 text-xs text-(--color-slate)">
-            dari {stats.totalTickets} tiket/QR terdaftar
-          </p>
+          <p className="mt-2 font-display text-3xl font-semibold text-(--color-ink)">{stats.totalPeople}</p>
+          <p className="mt-1 text-xs text-(--color-slate)">dari {stats.totalTickets} tiket/QR terdaftar</p>
         </div>
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-(--color-slate)">Sudah Hadir</p>
             <UserCheck className="h-4 w-4 text-(--color-emerald)" />
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold text-emerald-600">
-            {stats.hadirPeople}
-          </p>
+          <p className="mt-2 font-display text-3xl font-semibold text-emerald-600">{stats.hadirPeople}</p>
           <p className="mt-1 text-xs text-(--color-slate)">
             {attendanceRate}% tingkat kehadiran · {stats.hadirTickets} tiket
           </p>
@@ -158,18 +127,13 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <p className="text-sm font-medium text-(--color-slate)">Belum Hadir</p>
             <UserX className="h-4 w-4 text-(--color-amber)" />
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold text-amber-600">
-            {stats.belumHadirPeople}
-          </p>
+          <p className="mt-2 font-display text-3xl font-semibold text-amber-600">{stats.belumHadirPeople}</p>
           <p className="mt-1 text-xs text-(--color-slate)">{stats.belumHadirTickets} tiket</p>
         </div>
       </div>
 
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-(--color-emerald) transition-all"
-          style={{ width: `${attendanceRate}%` }}
-        />
+        <div className="h-full rounded-full bg-(--color-emerald) transition-all" style={{ width: `${attendanceRate}%` }} />
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -182,11 +146,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             className="w-full rounded-lg border border-(--color-border) bg-white py-2.5 pl-9 pr-3 text-sm focus:border-(--color-ink) focus:outline-none"
           />
         </div>
-        <select
-          value={familyFilter}
-          onChange={(e) => setFamilyFilter(e.target.value)}
-          className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
-        >
+        <select value={familyFilter} onChange={(e) => setFamilyFilter(e.target.value)} className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none">
           <option value="all">Semua keluarga</option>
           {familyOptions.map((fg) => (
             <option key={fg} value={fg}>
@@ -205,11 +165,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <button
               key={opt.value}
               onClick={() => setStatusFilter(opt.value)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                statusFilter === opt.value
-                  ? "bg-white text-(--color-ink) shadow-sm"
-                  : "text-(--color-slate)"
-              }`}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${statusFilter === opt.value ? "bg-white text-(--color-ink) shadow-sm" : "text-(--color-slate)"}`}
             >
               {opt.label}
             </button>
@@ -245,17 +201,13 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-(--color-ink)">{p.name}</p>
                     </td>
-                    <td className="px-5 py-3.5 text-(--color-slate)">
-                      {formatPhoneDisplay(p.phone)}
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-(--color-slate)">
-                      {p.seat_number}
-                    </td>
+                    <td className="px-5 py-3.5 text-(--color-slate)">{formatPhoneDisplay(p.phone)}</td>
+                    <td className="px-5 py-3.5 font-mono text-(--color-slate)">{p.seat_number}</td>
                     <td className="px-5 py-3.5">
                       <FamilyGroupBadge familyGroup={p.family_group} />
                     </td>
                     <td className="px-5 py-3.5">
-                      <QtyBadge qty={p.qty} />
+                      <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                     </td>
                     <td className="px-5 py-3.5">
                       <StatusBadge status={p.status} />
@@ -263,9 +215,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                     <td className="px-5 py-3.5">
                       <RsvpBadge status={p.rsvp_status} />
                     </td>
-                    <td className="px-5 py-3.5 text-(--color-slate)">
-                      {formatDateTime(p.checked_in_at)}
-                    </td>
+                    <td className="px-5 py-3.5 text-(--color-slate)">{formatDateTime(p.checked_in_at)}</td>
                   </tr>
                 ))
               )}
@@ -275,9 +225,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
 
         {/* CARD VIEW MOBILE — read-only, ringkas tanpa tombol aksi (laporan bersifat lihat saja) */}
         {filtered.length === 0 ? (
-          <p className="md:hidden px-5 py-10 text-center text-sm text-(--color-slate)">
-            Tidak ada data yang cocok dengan pencarian atau filter ini.
-          </p>
+          <p className="md:hidden px-5 py-10 text-center text-sm text-(--color-slate)">Tidak ada data yang cocok dengan pencarian atau filter ini.</p>
         ) : (
           <div className="md:hidden divide-y divide-(--color-border)">
             {filtered.map((p) => (
@@ -285,20 +233,14 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-(--color-ink)">{p.name}</p>
-                    <p className="text-xs text-(--color-slate)">
-                      {formatPhoneDisplay(p.phone)}
-                    </p>
+                    <p className="text-xs text-(--color-slate)">{formatPhoneDisplay(p.phone)}</p>
                   </div>
-                  <p className="shrink-0 text-xs text-(--color-slate)">
-                    {formatDateTime(p.checked_in_at)}
-                  </p>
+                  <p className="shrink-0 text-xs text-(--color-slate)">{formatDateTime(p.checked_in_at)}</p>
                 </div>
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-(--color-slate)">
-                    Kursi {p.seat_number}
-                  </span>
+                  <span className="font-mono text-xs text-(--color-slate)">Kursi {p.seat_number}</span>
                   <FamilyGroupBadge familyGroup={p.family_group} />
-                  <QtyBadge qty={p.qty} />
+                  <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                 </div>
                 <div className="mt-2.5 flex items-center gap-2">
                   <StatusBadge status={p.status} />
