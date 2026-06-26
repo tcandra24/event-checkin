@@ -1,5 +1,6 @@
-import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, loadImage, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import QRCode from "qrcode";
+import path from "path";
 
 export interface TicketCardInput {
   participantName: string;
@@ -13,6 +14,29 @@ export interface TicketCardInput {
 
 const CARD_WIDTH = 800;
 const CARD_HEIGHT = 1420;
+
+const SANS_FAMILY = "Ticket Sans";
+const SERIF_FAMILY = "Ticket Serif";
+
+// @napi-rs/canvas TIDAK mewarisi font sistem operasi. Di lingkungan
+// serverless (Vercel dll), tidak ada font apa pun ter-install secara
+// default — jika pakai nama generic "sans-serif"/"serif" tanpa registrasi
+// manual, ctx.fillText() akan gagal diam-diam (teks tidak tergambar,
+// padahal gambar/QR tetap normal). Solusinya: bundel font sendiri dan
+// register manual lewat GlobalFonts.
+let fontsRegistered = false;
+function ensureFontsRegistered() {
+  if (fontsRegistered) return;
+
+  const fontsDir = path.join(process.cwd(), "src/lib/fonts");
+
+  GlobalFonts.registerFromPath(path.join(fontsDir, "Poppins-Regular.ttf"), SANS_FAMILY);
+  GlobalFonts.registerFromPath(path.join(fontsDir, "Poppins-Medium.ttf"), SANS_FAMILY);
+  GlobalFonts.registerFromPath(path.join(fontsDir, "Poppins-Bold.ttf"), SANS_FAMILY);
+  GlobalFonts.registerFromPath(path.join(fontsDir, "Lora-Variable.ttf"), SERIF_FAMILY);
+
+  fontsRegistered = true;
+}
 
 function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(" ");
@@ -39,6 +63,8 @@ function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] 
  * Mengembalikan buffer PNG yang siap diunduh atau dikirim lewat Fonnte.
  */
 export async function generateTicketCard(input: TicketCardInput): Promise<Buffer> {
+  ensureFontsRegistered();
+
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const ctx = canvas.getContext("2d");
 
@@ -69,7 +95,7 @@ export async function generateTicketCard(input: TicketCardInput): Promise<Buffer
   // 3. Nama acara & alamat di bagian atas
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff";
-  ctx.font = "600 80px sans-serif";
+  ctx.font = `600 70px "${SANS_FAMILY}"`;
   const eventLines = wrapText(ctx, input.eventName, CARD_WIDTH - 120);
   let y = 130;
   for (const line of eventLines) {
@@ -78,7 +104,7 @@ export async function generateTicketCard(input: TicketCardInput): Promise<Buffer
   }
 
   if (input.eventAddress) {
-    ctx.font = "400 34px sans-serif";
+    ctx.font = `400 30px "${SANS_FAMILY}"`;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     const addressLines = wrapText(ctx, input.eventAddress, CARD_WIDTH - 140);
     y += 8;
@@ -107,7 +133,7 @@ export async function generateTicketCard(input: TicketCardInput): Promise<Buffer
 
   // 5. Kode tiket di atas QR
   ctx.fillStyle = "#0f172a";
-  ctx.font = "700 30px serif";
+  ctx.font = `700 30px "${SANS_FAMILY}"`;
   ctx.fillText(input.code, CARD_WIDTH / 2, panelY + 60);
 
   // 6. QR code
@@ -121,20 +147,20 @@ export async function generateTicketCard(input: TicketCardInput): Promise<Buffer
 
   // 7. Nama peserta di bawah QR
   ctx.fillStyle = "#0f172a";
-  ctx.font = "700 28px serif";
+  ctx.font = `700 30px "${SANS_FAMILY}"`;
   ctx.fillText(input.participantName, CARD_WIDTH / 2, panelY + 90 + qrSize + 50);
 
   // 8. Jumlah pax di bawah panel
   ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.font = "400 22px sans-serif";
+  ctx.font = `400 25px "${SANS_FAMILY}"`;
   ctx.fillText("VALID FOR", CARD_WIDTH / 2, panelY + panelHeight + 60);
   ctx.fillStyle = "#ffffff";
-  ctx.font = "700 30px serif";
+  ctx.font = `700 23px "${SERIF_FAMILY}"`;
   ctx.fillText(`${input.rsvp_qty_response ? `${input.rsvp_qty_response} / ` : ""}${input.qty} Person${input.qty > 1 ? "s" : ""}`, CARD_WIDTH / 2, panelY + panelHeight + 100);
 
   // 9. Footer instruksi
   ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.font = "600 20px sans-serif";
+  ctx.font = `600 30px "${SANS_FAMILY}"`;
   ctx.fillText("TUNJUKKAN QR CODE INI DI LOKASI ACARA", CARD_WIDTH / 2, CARD_HEIGHT - 60);
 
   return canvas.encode("png");

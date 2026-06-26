@@ -160,6 +160,18 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 > lingkungan Vercel Node.js runtime), macOS, dan Windows. Pastikan deploy
 > menggunakan **Node.js runtime** (bukan Edge runtime) — ini sudah default
 > untuk Server Actions di Next.js.
+>
+> **Font pada gambar tiket di-bundle manual** (lihat `src/lib/fonts/`) dan
+> diregistrasi lewat `GlobalFonts.registerFromPath()` di `src/lib/ticketCard.ts`.
+> Ini disengaja: `@napi-rs/canvas` tidak mewarisi font sistem operasi, dan
+> lingkungan serverless seperti Vercel tidak memiliki font apa pun
+> ter-install secara default. Tanpa bundling ini, gambar QR & background
+> tetap tampil normal tapi **semua teks pada tiket akan kosong/tidak
+> tergambar** di produksi — meskipun terlihat normal saat development di
+> komputer lokal (karena OS desktop biasanya selalu punya font fallback).
+> Jangan hapus folder `src/lib/fonts/` atau baris `outputFileTracingIncludes`
+> di `next.config.ts`, karena keduanya saling terkait untuk memastikan font
+> ikut ter-bundle ke serverless function saat deploy.
 
 ## Struktur halaman
 
