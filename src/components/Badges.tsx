@@ -1,4 +1,5 @@
-import type { ParticipantStatus, ParticipantCategory } from "@/lib/types";
+import { Users } from "lucide-react";
+import type { ParticipantStatus } from "@/lib/types";
 
 export function StatusBadge({ status }: { status: ParticipantStatus }) {
   if (status === "hadir") {
@@ -17,17 +18,19 @@ export function StatusBadge({ status }: { status: ParticipantStatus }) {
   );
 }
 
-export function CategoryBadge({ category }: { category: ParticipantCategory }) {
-  if (category === "VIP") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-(--color-vip-soft) px-2.5 py-1 text-xs font-semibold text-violet-700">
-        VIP
-      </span>
-    );
-  }
+export function FamilyGroupBadge({ familyGroup }: { familyGroup: string }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-      Umum
+    <span className="inline-flex items-center rounded-full bg-(--color-vip-soft) px-2.5 py-1 text-xs font-semibold text-violet-700">
+      {familyGroup}
+    </span>
+  );
+}
+
+export function QtyBadge({ qty }: { qty: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+      <Users className="h-3 w-3" />
+      {qty} pax
     </span>
   );
 }

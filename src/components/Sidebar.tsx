@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Users, ClipboardList, QrCode, LogOut, CalendarDays } from "lucide-react";
+import { Users, ClipboardList, QrCode, LogOut, CalendarDays, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
   { href: "/peserta", label: "Input Peserta", icon: Users },
   { href: "/laporan", label: "Laporan Kehadiran", icon: ClipboardList },
   { href: "/scan", label: "Scan QR Code", icon: QrCode },
+  { href: "/pengaturan", label: "Pengaturan Tiket", icon: Settings },
 ];
 
 export function Sidebar({ userEmail }: { userEmail?: string }) {
@@ -23,7 +24,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
   }
 
   return (
-    <aside className="flex h-full w-64 flex-col bg-(--color-ink) text-white">
+    <aside className="flex w-64 flex-col bg-(--color-ink) text-white">
       <div className="flex items-center gap-2.5 px-6 py-6">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10">
           <CalendarDays className="h-5 w-5" />

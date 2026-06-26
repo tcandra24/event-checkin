@@ -4,24 +4,22 @@ import { useState } from "react";
 import { Loader2, X, Send, CheckCircle2, XCircle } from "lucide-react";
 import { sendBroadcast, type BroadcastFilter } from "@/app/actions/broadcast";
 
-const FILTER_OPTIONS: { value: BroadcastFilter; label: string }[] = [
-  { value: "all", label: "Semua peserta" },
-  { value: "belum_hadir", label: "Belum hadir saja" },
-  { value: "hadir", label: "Sudah hadir saja" },
-  { value: "VIP", label: "Kategori VIP" },
-  { value: "Umum", label: "Kategori Umum" },
-];
-
 const DEFAULT_TEMPLATE = `Halo {nama},
 
-Anda mengundang untuk menghadiri *${process.env.NEXT_PUBLIC_EVENT_NAME || "acara kami"}*.
-
-🗓️ ${process.env.NEXT_PUBLIC_EVENT_DATE || "[tanggal acara]"}
-📍 ${process.env.NEXT_PUBLIC_EVENT_LOCATION || "[lokasi acara]"}
+Anda diundang untuk menghadiri acara kami.
+Nomor kursi: {kursi}
+Rombongan: {keluarga}
+Berlaku untuk: {qty} orang
 
 Mohon tunjukkan QR code terlampir saat tiba di lokasi untuk proses check-in. Sampai jumpa di acara!`;
 
-export function BroadcastModal({ onClose }: { onClose: () => void }) {
+export function BroadcastModal({
+  onClose,
+  familyOptions,
+}: {
+  onClose: () => void;
+  familyOptions: string[];
+}) {
   const [message, setMessage] = useState(DEFAULT_TEMPLATE);
   const [filter, setFilter] = useState<BroadcastFilter>("belum_hadir");
   const [includeQr, setIncludeQr] = useState(true);
@@ -132,14 +130,21 @@ export function BroadcastModal({ onClose }: { onClose: () => void }) {
               </label>
               <select
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as BroadcastFilter)}
+                onChange={(e) => setFilter(e.target.value)}
                 className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
               >
-                {FILTER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
+                <option value="all">Semua peserta</option>
+                <option value="belum_hadir">Belum hadir saja</option>
+                <option value="hadir">Sudah hadir saja</option>
+                {familyOptions.length > 0 && (
+                  <optgroup label="Per keluarga/rombongan">
+                    {familyOptions.map((fg) => (
+                      <option key={fg} value={fg}>
+                        {fg}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -156,8 +161,9 @@ export function BroadcastModal({ onClose }: { onClose: () => void }) {
               <p className="mt-1.5 text-xs text-(--color-slate)">
                 Placeholder yang tersedia:{" "}
                 <code className="rounded bg-slate-100 px-1">{"{nama}"}</code>{" "}
-                <code className="rounded bg-slate-100 px-1">{"{instansi}"}</code>{" "}
-                <code className="rounded bg-slate-100 px-1">{"{kategori}"}</code>{" "}
+                <code className="rounded bg-slate-100 px-1">{"{kursi}"}</code>{" "}
+                <code className="rounded bg-slate-100 px-1">{"{keluarga}"}</code>{" "}
+                <code className="rounded bg-slate-100 px-1">{"{qty}"}</code>{" "}
                 <code className="rounded bg-slate-100 px-1">{"{kode}"}</code>
               </p>
             </div>
@@ -170,7 +176,7 @@ export function BroadcastModal({ onClose }: { onClose: () => void }) {
                 className="h-4 w-4 rounded border-(--color-border)"
               />
               <span className="text-sm text-(--color-ink)">
-                Lampirkan gambar QR code pribadi setiap peserta
+                Lampirkan gambar tiket QR code pribadi setiap peserta
               </span>
             </label>
 

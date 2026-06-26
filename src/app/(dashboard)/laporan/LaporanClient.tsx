@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search, Download, UserCheck, UserX, Users2 } from "lucide-react";
 import type { Participant } from "@/lib/types";
-import { StatusBadge, CategoryBadge } from "@/components/Badges";
+import { StatusBadge, FamilyGroupBadge, QtyBadge } from "@/components/Badges";
 import { formatPhoneDisplay } from "@/lib/utils";
 
 function formatDateTime(iso: string | null): string {
@@ -19,11 +19,25 @@ function formatDateTime(iso: string | null): string {
 export function LaporanClient({ participants }: { participants: Participant[] }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "hadir" | "belum_hadir">("all");
+  const [familyFilter, setFamilyFilter] = useState<string>("all");
+
+  const familyOptions = useMemo(() => {
+    return Array.from(new Set(participants.map((p) => p.family_group))).sort();
+  }, [participants]);
 
   const stats = useMemo(() => {
-    const total = participants.length;
-    const hadir = participants.filter((p) => p.status === "hadir").length;
-    return { total, hadir, belumHadir: total - hadir };
+    const totalPeople = participants.reduce((sum, p) => sum + p.qty, 0);
+    const totalTickets = participants.length;
+    const hadirTickets = participants.filter((p) => p.status === "hadir");
+    const hadirPeople = hadirTickets.reduce((sum, p) => sum + p.qty, 0);
+    return {
+      totalTickets,
+      totalPeople,
+      hadirTickets: hadirTickets.length,
+      hadirPeople,
+      belumHadirTickets: totalTickets - hadirTickets.length,
+      belumHadirPeople: totalPeople - hadirPeople,
+    };
   }, [participants]);
 
   const filtered = useMemo(() => {
@@ -31,19 +45,31 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       const matchSearch =
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.phone.includes(search) ||
-        (p.company ?? "").toLowerCase().includes(search.toLowerCase());
+        p.seat_number.toLowerCase().includes(search.toLowerCase()) ||
+        p.family_group.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || p.status === statusFilter;
-      return matchSearch && matchStatus;
+      const matchFamily = familyFilter === "all" || p.family_group === familyFilter;
+      return matchSearch && matchStatus && matchFamily;
     });
-  }, [participants, search, statusFilter]);
+  }, [participants, search, statusFilter, familyFilter]);
 
   function handleExportCsv() {
-    const headers = ["Nama", "No HP", "Instansi", "Kategori", "Status", "Waktu Check-in", "Kode"];
+    const headers = [
+      "Nama",
+      "No HP",
+      "Nomor Kursi",
+      "Keluarga",
+      "Qty",
+      "Status",
+      "Waktu Check-in",
+      "Kode",
+    ];
     const rows = filtered.map((p) => [
       p.name,
       formatPhoneDisplay(p.phone),
-      p.company || "",
-      p.category,
+      p.seat_number,
+      p.family_group,
+      p.qty,
       p.status === "hadir" ? "Hadir" : "Belum Hadir",
       formatDateTime(p.checked_in_at),
       p.code,
@@ -62,7 +88,8 @@ export function LaporanClient({ participants }: { participants: Participant[] })
     URL.revokeObjectURL(url);
   }
 
-  const attendanceRate = stats.total > 0 ? Math.round((stats.hadir / stats.total) * 100) : 0;
+  const attendanceRate =
+    stats.totalPeople > 0 ? Math.round((stats.hadirPeople / stats.totalPeople) * 100) : 0;
 
   return (
     <div className="px-8 py-7">
@@ -87,11 +114,14 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-(--color-slate)">Total Peserta</p>
+            <p className="text-sm font-medium text-(--color-slate)">Total Tamu</p>
             <Users2 className="h-4 w-4 text-(--color-slate-light)" />
           </div>
           <p className="mt-2 font-display text-3xl font-semibold text-(--color-ink)">
-            {stats.total}
+            {stats.totalPeople}
+          </p>
+          <p className="mt-1 text-xs text-(--color-slate)">
+            dari {stats.totalTickets} tiket/QR terdaftar
           </p>
         </div>
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
@@ -100,9 +130,11 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <UserCheck className="h-4 w-4 text-(--color-emerald)" />
           </div>
           <p className="mt-2 font-display text-3xl font-semibold text-emerald-600">
-            {stats.hadir}
+            {stats.hadirPeople}
           </p>
-          <p className="mt-1 text-xs text-(--color-slate)">{attendanceRate}% tingkat kehadiran</p>
+          <p className="mt-1 text-xs text-(--color-slate)">
+            {attendanceRate}% tingkat kehadiran · {stats.hadirTickets} tiket
+          </p>
         </div>
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
           <div className="flex items-center justify-between">
@@ -110,8 +142,9 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <UserX className="h-4 w-4 text-(--color-amber)" />
           </div>
           <p className="mt-2 font-display text-3xl font-semibold text-amber-600">
-            {stats.belumHadir}
+            {stats.belumHadirPeople}
           </p>
+          <p className="mt-1 text-xs text-(--color-slate)">{stats.belumHadirTickets} tiket</p>
         </div>
       </div>
 
@@ -128,10 +161,22 @@ export function LaporanClient({ participants }: { participants: Participant[] })
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari nama, HP, atau instansi..."
+            placeholder="Cari nama, HP, kursi, atau keluarga..."
             className="w-full rounded-lg border border-(--color-border) bg-white py-2.5 pl-9 pr-3 text-sm focus:border-(--color-ink) focus:outline-none"
           />
         </div>
+        <select
+          value={familyFilter}
+          onChange={(e) => setFamilyFilter(e.target.value)}
+          className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
+        >
+          <option value="all">Semua keluarga</option>
+          {familyOptions.map((fg) => (
+            <option key={fg} value={fg}>
+              {fg}
+            </option>
+          ))}
+        </select>
         <div className="flex gap-1.5 rounded-lg bg-slate-100 p-1">
           {(
             [
@@ -162,7 +207,9 @@ export function LaporanClient({ participants }: { participants: Participant[] })
               <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
                 <th className="px-5 py-3 font-medium">Nama</th>
                 <th className="px-5 py-3 font-medium">Kontak</th>
-                <th className="px-5 py-3 font-medium">Kategori</th>
+                <th className="px-5 py-3 font-medium">Kursi</th>
+                <th className="px-5 py-3 font-medium">Keluarga</th>
+                <th className="px-5 py-3 font-medium">Qty</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Waktu Check-in</th>
               </tr>
@@ -170,7 +217,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             <tbody className="divide-y divide-(--color-border)">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-(--color-slate)">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-(--color-slate)">
                     Tidak ada data yang cocok dengan pencarian atau filter ini.
                   </td>
                 </tr>
@@ -179,13 +226,18 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                   <tr key={p.id} className="hover:bg-slate-50/60">
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-(--color-ink)">{p.name}</p>
-                      <p className="text-xs text-(--color-slate)">{p.company || "—"}</p>
                     </td>
                     <td className="px-5 py-3.5 text-(--color-slate)">
                       {formatPhoneDisplay(p.phone)}
                     </td>
+                    <td className="px-5 py-3.5 font-mono text-(--color-slate)">
+                      {p.seat_number}
+                    </td>
                     <td className="px-5 py-3.5">
-                      <CategoryBadge category={p.category} />
+                      <FamilyGroupBadge familyGroup={p.family_group} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <QtyBadge qty={p.qty} />
                     </td>
                     <td className="px-5 py-3.5">
                       <StatusBadge status={p.status} />
@@ -202,7 +254,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       </div>
 
       <p className="mt-3 text-xs text-(--color-slate)">
-        Menampilkan {filtered.length} dari {participants.length} peserta
+        Menampilkan {filtered.length} dari {participants.length} tiket terdaftar
       </p>
     </div>
   );

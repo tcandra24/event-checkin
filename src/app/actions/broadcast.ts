@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import QRCode from "qrcode";
+import { generateTicketCard } from "@/lib/ticketCard";
 import type { Participant } from "@/lib/types";
 
 export interface BroadcastResult {
@@ -14,19 +14,21 @@ export interface BroadcastResult {
   failedNames?: string[];
 }
 
-export type BroadcastFilter = "all" | "VIP" | "Umum" | "belum_hadir" | "hadir";
+// "all" / "belum_hadir" / "hadir", atau nilai family_group spesifik (string bebas)
+export type BroadcastFilter = string;
 
 const FONNTE_ENDPOINT_TEXT = "https://api.fonnte.com/send";
 
 /**
  * Mengganti placeholder pada template pesan dengan data masing-masing peserta.
- * Placeholder yang didukung: {nama}, {instansi}, {kategori}, {kode}
+ * Placeholder yang didukung: {nama}, {kursi}, {keluarga}, {qty}, {kode}
  */
 function renderMessage(template: string, p: Participant): string {
   return template
     .replaceAll("{nama}", p.name)
-    .replaceAll("{instansi}", p.company || "-")
-    .replaceAll("{kategori}", p.category)
+    .replaceAll("{kursi}", p.seat_number)
+    .replaceAll("{keluarga}", p.family_group)
+    .replaceAll("{qty}", String(p.qty))
     .replaceAll("{kode}", p.code);
 }
 
@@ -34,16 +36,15 @@ async function sendOne(
   token: string,
   phone: string,
   message: string,
-  qrDataUrl?: string
+  imageBuffer?: Buffer
 ): Promise<{ ok: boolean; reason?: string }> {
   try {
-    if (qrDataUrl) {
-      // Fonnte mendukung pengiriman gambar lewat field "file" berupa base64 atau URL.
-      // Untuk base64, Fonnte mensyaratkan data URL (data:image/png;base64,...).
+    if (imageBuffer) {
       const form = new FormData();
       form.append("target", phone);
       form.append("message", message);
-      form.append("file", qrDataUrl);
+      const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
+      form.append("file", blob, "tiket.png");
 
       const res = await fetch(FONNTE_ENDPOINT_TEXT, {
         method: "POST",
@@ -100,10 +101,11 @@ export async function sendBroadcast(input: {
   }
 
   let query = supabase.from("participants").select("*");
-  if (input.filter === "VIP" || input.filter === "Umum") {
-    query = query.eq("category", input.filter);
-  } else if (input.filter === "belum_hadir" || input.filter === "hadir") {
+  if (input.filter === "belum_hadir" || input.filter === "hadir") {
     query = query.eq("status", input.filter);
+  } else if (input.filter !== "all") {
+    // filter berupa nama family_group spesifik
+    query = query.eq("family_group", input.filter);
   }
 
   const { data: participants, error } = await query;
@@ -114,6 +116,16 @@ export async function sendBroadcast(input: {
     return { success: false, error: "Tidak ada peserta yang cocok dengan filter ini." };
   }
 
+  let settings: { event_name: string; event_address: string; ticket_background_url: string | null } | null = null;
+  if (input.includeQr) {
+    const { data } = await supabase
+      .from("event_settings")
+      .select("event_name, event_address, ticket_background_url")
+      .eq("id", 1)
+      .maybeSingle();
+    settings = data;
+  }
+
   let totalSuccess = 0;
   let totalFailed = 0;
   const failedNames: string[] = [];
@@ -122,12 +134,23 @@ export async function sendBroadcast(input: {
   for (const p of participants as Participant[]) {
     const message = renderMessage(input.message, p);
 
-    let qrDataUrl: string | undefined;
+    let imageBuffer: Buffer | undefined;
     if (input.includeQr) {
-      qrDataUrl = await QRCode.toDataURL(p.code, { width: 480, margin: 1 });
+      try {
+        imageBuffer = await generateTicketCard({
+          participantName: p.name,
+          code: p.code,
+          qty: p.qty,
+          eventName: settings?.event_name || "Nama Acara Anda",
+          eventAddress: settings?.event_address || "",
+          backgroundUrl: settings?.ticket_background_url || null,
+        });
+      } catch {
+        imageBuffer = undefined;
+      }
     }
 
-    const result = await sendOne(token, p.phone, message, qrDataUrl);
+    const result = await sendOne(token, p.phone, message, imageBuffer);
 
     if (result.ok) {
       totalSuccess++;

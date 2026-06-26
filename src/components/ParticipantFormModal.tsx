@@ -1,9 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, X } from "lucide-react";
-import type { Participant, ParticipantCategory } from "@/lib/types";
-import { createParticipant, updateParticipant } from "@/app/actions/participants";
+import { Loader2, X, Minus, Plus } from "lucide-react";
+import type { Participant } from "@/lib/types";
+import {
+  createParticipant,
+  updateParticipant,
+  type ParticipantFormInput,
+} from "@/app/actions/participants";
 
 export function ParticipantFormModal({
   participant,
@@ -17,21 +21,32 @@ export function ParticipantFormModal({
   const isEdit = !!participant;
   const [name, setName] = useState(participant?.name ?? "");
   const [phone, setPhone] = useState(participant?.phone ?? "");
-  const [company, setCompany] = useState(participant?.company ?? "");
-  const [category, setCategory] = useState<ParticipantCategory>(
-    participant?.category ?? "Umum"
-  );
+  const [seatNumber, setSeatNumber] = useState(participant?.seat_number ?? "");
+  const [familyGroup, setFamilyGroup] = useState(participant?.family_group ?? "");
+  const [qty, setQty] = useState(participant?.qty ?? 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function adjustQty(delta: number) {
+    setQty((prev) => Math.max(1, prev + delta));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
+    const input: ParticipantFormInput = {
+      name,
+      phone,
+      seat_number: seatNumber,
+      family_group: familyGroup,
+      qty,
+    };
+
     const result = isEdit
-      ? await updateParticipant(participant!.id, { name, phone, company, category })
-      : await createParticipant({ name, phone, company, category });
+      ? await updateParticipant(participant!.id, input)
+      : await createParticipant(input);
 
     setLoading(false);
 
@@ -93,37 +108,68 @@ export function ParticipantFormModal({
               />
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
-                Instansi / Perusahaan
-              </label>
-              <input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Opsional"
-                className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
+                  Nomor kursi
+                </label>
+                <input
+                  required
+                  value={seatNumber}
+                  onChange={(e) => setSeatNumber(e.target.value)}
+                  placeholder="Contoh: A12"
+                  className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
+                  Keluarga / rombongan
+                </label>
+                <input
+                  required
+                  value={familyGroup}
+                  onChange={(e) => setFamilyGroup(e.target.value)}
+                  placeholder="Contoh: Keluarga Santoso"
+                  className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
+                />
+              </div>
             </div>
+            <p className="!mt-1.5 text-xs text-(--color-slate)">
+              Nomor kursi dan keluarga juga dipakai untuk mengelompokkan peserta di
+              laporan dan saat broadcast WhatsApp.
+            </p>
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
-                Kategori tamu
+                Jumlah pax (qty tiket)
               </label>
-              <div className="flex gap-2">
-                {(["Umum", "VIP"] as ParticipantCategory[]).map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategory(cat)}
-                    className={`flex-1 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                      category === cat
-                        ? "border-(--color-ink) bg-(--color-ink) text-white"
-                        : "border-(--color-border) text-(--color-slate) hover:bg-slate-50"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => adjustQty(-1)}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-(--color-border) text-(--color-ink) hover:bg-slate-50"
+                  aria-label="Kurangi jumlah pax"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  value={qty}
+                  onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-20 rounded-lg border border-(--color-border) px-3 py-2.5 text-center text-sm focus:border-(--color-ink) focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustQty(1)}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-(--color-border) text-(--color-ink) hover:bg-slate-50"
+                  aria-label="Tambah jumlah pax"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                <p className="text-xs text-(--color-slate)">
+                  1 QR code berlaku untuk {qty} orang
+                </p>
               </div>
             </div>
           </div>

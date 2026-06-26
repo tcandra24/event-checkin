@@ -7,12 +7,12 @@ import {
   AlertCircle,
   Camera,
   CameraOff,
-  Building2,
+  Armchair,
   Keyboard,
   ScanLine,
 } from "lucide-react";
 import { checkInByCode } from "@/app/actions/checkin";
-import { CategoryBadge } from "@/components/Badges";
+import { FamilyGroupBadge, QtyBadge } from "@/components/Badges";
 import { formatPhoneDisplay } from "@/lib/utils";
 import type { Participant } from "@/lib/types";
 
@@ -323,18 +323,23 @@ export function ScanClient() {
                 <p className="mt-2 font-display text-lg font-semibold text-(--color-ink)">
                   {feedback.participant.name}
                 </p>
-                <div className="mt-1 flex items-center gap-2">
-                  <CategoryBadge category={feedback.participant.category} />
-                  {feedback.participant.company && (
-                    <span className="flex items-center gap-1 text-xs text-(--color-slate)">
-                      <Building2 className="h-3 w-3" />
-                      {feedback.participant.company}
-                    </span>
-                  )}
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <FamilyGroupBadge familyGroup={feedback.participant.family_group} />
+                  <QtyBadge qty={feedback.participant.qty} />
+                  <span className="flex items-center gap-1 text-xs text-(--color-slate)">
+                    <Armchair className="h-3 w-3" />
+                    Kursi {feedback.participant.seat_number}
+                  </span>
                 </div>
                 <p className="mt-1 text-xs text-(--color-slate)">
                   {formatPhoneDisplay(feedback.participant.phone)}
                 </p>
+                {feedback.participant.qty > 1 && (
+                  <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs font-medium text-(--color-ink)">
+                    Tiket ini berlaku untuk {feedback.participant.qty} orang —
+                    pastikan seluruh rombongan sudah memasuki lokasi acara.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -356,9 +361,9 @@ export function ScanClient() {
                 >
                   <div>
                     <p className="text-sm font-medium text-(--color-ink)">{p.name}</p>
-                    <p className="text-xs text-(--color-slate)">{p.company || "—"}</p>
+                    <p className="text-xs text-(--color-slate)">Kursi {p.seat_number}</p>
                   </div>
-                  <CategoryBadge category={p.category} />
+                  <QtyBadge qty={p.qty} />
                 </li>
               ))}
             </ul>

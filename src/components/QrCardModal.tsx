@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
-import { Download, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, X, Loader2, AlertCircle } from "lucide-react";
 import type { Participant } from "@/lib/types";
-import { CategoryBadge } from "@/components/Badges";
-import { formatPhoneDisplay } from "@/lib/utils";
+import { generateTicketCardForParticipant } from "@/app/actions/ticketCard";
 
 export function QrCardModal({
   participant,
@@ -14,20 +12,33 @@ export function QrCardModal({
   participant: Participant;
   onClose: () => void;
 }) {
-  const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    QRCode.toDataURL(participant.code, { width: 600, margin: 1 }).then(
-      setQrUrl
-    );
-  }, [participant.code]);
+    let active = true;
+
+    generateTicketCardForParticipant(participant.id).then((result) => {
+      if (!active) return;
+      setLoading(false);
+      if (!result.success || !result.dataUrl) {
+        setError(result.error ?? "Gagal membuat kartu tiket.");
+        return;
+      }
+      setImageUrl(result.dataUrl);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [participant.id]);
 
   function handleDownload() {
-    if (!qrUrl) return;
+    if (!imageUrl) return;
     const link = document.createElement("a");
-    link.href = qrUrl;
-    link.download = `QR-${participant.code}.png`;
+    link.href = imageUrl;
+    link.download = `Tiket-${participant.code}.png`;
     link.click();
   }
 
@@ -36,11 +47,7 @@ export function QrCardModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
-      <div
-        className="w-full max-w-sm"
-        onClick={(e) => e.stopPropagation()}
-        ref={cardRef}
-      >
+      <div className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="overflow-hidden rounded-2xl bg-white shadow-xl">
           <div className="flex items-center justify-between bg-(--color-ink) px-5 py-3.5">
             <p className="font-display text-sm font-semibold text-white">
@@ -55,50 +62,39 @@ export function QrCardModal({
             </button>
           </div>
 
-          <div className="px-6 pt-6">
-            <p className="font-display text-lg font-semibold text-(--color-ink)">
-              {participant.name}
-            </p>
-            {participant.company && (
-              <p className="text-sm text-(--color-slate)">{participant.company}</p>
+          <div className="flex flex-col items-center justify-center bg-slate-100 px-4 py-4">
+            {loading && (
+              <div className="flex h-96 w-full flex-col items-center justify-center gap-2 text-(--color-slate)">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <p className="text-sm">Membuat tiket...</p>
+              </div>
             )}
-            <div className="mt-2 flex items-center gap-2">
-              <CategoryBadge category={participant.category} />
-              <span className="text-xs text-(--color-slate)">
-                {formatPhoneDisplay(participant.phone)}
-              </span>
-            </div>
-          </div>
 
-          <div className="ticket-perforation my-5 border-t border-dashed border-(--color-border)" />
+            {error && (
+              <div className="flex h-96 w-full flex-col items-center justify-center gap-2 px-6 text-center text-red-600">
+                <AlertCircle className="h-6 w-6" />
+                <p className="text-sm">{error}</p>
+              </div>
+            )}
 
-          <div className="flex flex-col items-center px-6 pb-6">
-            {qrUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data URL base64 dinamis, tidak didukung next/image
+            {imageUrl && !loading && (
+              // eslint-disable-next-line @next/next/no-img-element -- data URL base64 dinamis hasil render server, tidak didukung next/image
               <img
-                src={qrUrl}
-                alt={`QR code untuk ${participant.name}`}
-                className="h-48 w-48"
+                src={imageUrl}
+                alt={`Tiket untuk ${participant.name}`}
+                className="max-h-[70vh] w-full rounded-lg object-contain shadow-sm"
               />
-            ) : (
-              <div className="h-48 w-48 animate-pulse rounded-lg bg-slate-100" />
             )}
-            <p className="mt-3 font-mono text-sm font-medium tracking-wide text-(--color-ink)">
-              {participant.code}
-            </p>
-            <p className="mt-1 text-center text-xs text-(--color-slate)">
-              Tunjukkan QR ini saat tiba di lokasi acara
-            </p>
           </div>
         </div>
 
         <button
           onClick={handleDownload}
-          disabled={!qrUrl}
+          disabled={!imageUrl}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-(--color-ink) shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
         >
           <Download className="h-4 w-4" />
-          Unduh gambar QR
+          Unduh tiket (PNG)
         </button>
       </div>
     </div>

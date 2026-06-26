@@ -1,12 +1,12 @@
-export type ParticipantCategory = "VIP" | "Umum";
 export type ParticipantStatus = "belum_hadir" | "hadir";
 
 export interface Participant {
   id: string;
   name: string;
   phone: string;
-  company: string | null;
-  category: ParticipantCategory;
+  seat_number: string;
+  family_group: string;
+  qty: number;
   code: string;
   status: ParticipantStatus;
   checked_in_at: string | null;
@@ -20,8 +20,9 @@ export interface Participant {
 export interface ParticipantInput {
   name: string;
   phone: string;
-  company?: string;
-  category: ParticipantCategory;
+  seat_number: string;
+  family_group: string;
+  qty: number;
 }
 
 export interface BroadcastLog {
@@ -33,4 +34,13 @@ export interface BroadcastLog {
   total_success: number;
   total_failed: number;
   created_at: string;
+}
+
+export interface EventSettings {
+  id: number;
+  event_name: string;
+  event_address: string;
+  ticket_background_url: string | null;
+  created_at: string;
+  updated_at: string;
 }

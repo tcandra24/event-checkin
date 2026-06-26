@@ -11,9 +11,11 @@ import {
   Send,
   Users,
   RotateCcw,
+  Settings,
 } from "lucide-react";
+import Link from "next/link";
 import type { Participant } from "@/lib/types";
-import { StatusBadge, CategoryBadge } from "@/components/Badges";
+import { StatusBadge, FamilyGroupBadge, QtyBadge } from "@/components/Badges";
 import { formatPhoneDisplay } from "@/lib/utils";
 import { ParticipantFormModal } from "@/components/ParticipantFormModal";
 import { ConfirmDeleteModal } from "@/components/ConfirmDeleteModal";
@@ -37,7 +39,7 @@ export function ParticipantsClient({
   const router = useRouter();
   const participants = initialParticipants;
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | "VIP" | "Umum">("all");
+  const [familyFilter, setFamilyFilter] = useState<string>("all");
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [, startTransition] = useTransition();
 
@@ -46,17 +48,27 @@ export function ParticipantsClient({
     startTransition(() => router.refresh());
   }
 
+  const familyOptions = useMemo(() => {
+    return Array.from(new Set(participants.map((p) => p.family_group))).sort();
+  }, [participants]);
+
   const filtered = useMemo(() => {
     return participants.filter((p) => {
       const matchSearch =
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.phone.includes(search) ||
-        (p.company ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        p.seat_number.toLowerCase().includes(search.toLowerCase()) ||
+        p.family_group.toLowerCase().includes(search.toLowerCase()) ||
         p.code.toLowerCase().includes(search.toLowerCase());
-      const matchCategory = categoryFilter === "all" || p.category === categoryFilter;
-      return matchSearch && matchCategory;
+      const matchFamily = familyFilter === "all" || p.family_group === familyFilter;
+      return matchSearch && matchFamily;
     });
-  }, [participants, search, categoryFilter]);
+  }, [participants, search, familyFilter]);
+
+  const totalPax = useMemo(
+    () => filtered.reduce((sum, p) => sum + p.qty, 0),
+    [filtered]
+  );
 
   async function handleResetStatus(p: Participant) {
     await resetParticipantStatus(p.id);
@@ -75,6 +87,13 @@ export function ParticipantsClient({
           </p>
         </div>
         <div className="flex gap-2.5">
+          <Link
+            href="/pengaturan"
+            className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-white px-4 py-2.5 text-sm font-semibold text-(--color-ink) shadow-sm hover:bg-slate-50"
+          >
+            <Settings className="h-4 w-4" />
+            Pengaturan Tiket
+          </Link>
           <button
             onClick={() => setModal({ type: "broadcast" })}
             className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-white px-4 py-2.5 text-sm font-semibold text-(--color-ink) shadow-sm hover:bg-slate-50"
@@ -98,25 +117,22 @@ export function ParticipantsClient({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari nama, HP, instansi, atau kode..."
+            placeholder="Cari nama, HP, kursi, keluarga, atau kode..."
             className="w-full rounded-lg border border-(--color-border) bg-white py-2.5 pl-9 pr-3 text-sm focus:border-(--color-ink) focus:outline-none"
           />
         </div>
-        <div className="flex gap-1.5 rounded-lg bg-slate-100 p-1">
-          {(["all", "VIP", "Umum"] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setCategoryFilter(opt)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                categoryFilter === opt
-                  ? "bg-white text-(--color-ink) shadow-sm"
-                  : "text-(--color-slate)"
-              }`}
-            >
-              {opt === "all" ? "Semua" : opt}
-            </button>
+        <select
+          value={familyFilter}
+          onChange={(e) => setFamilyFilter(e.target.value)}
+          className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
+        >
+          <option value="all">Semua keluarga</option>
+          {familyOptions.map((fg) => (
+            <option key={fg} value={fg}>
+              {fg}
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
       <div className="mt-5 overflow-hidden rounded-xl border border-(--color-border) bg-white">
@@ -133,7 +149,7 @@ export function ParticipantsClient({
             <p className="mt-1 text-sm text-(--color-slate)">
               {participants.length === 0
                 ? "Tambahkan peserta pertama untuk mulai membuat QR code undangan."
-                : "Coba ubah kata pencarian atau filter kategori."}
+                : "Coba ubah kata pencarian atau filter keluarga."}
             </p>
           </div>
         ) : (
@@ -143,8 +159,9 @@ export function ParticipantsClient({
                 <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
                   <th className="px-5 py-3 font-medium">Nama</th>
                   <th className="px-5 py-3 font-medium">Kontak</th>
-                  <th className="px-5 py-3 font-medium">Instansi</th>
-                  <th className="px-5 py-3 font-medium">Kategori</th>
+                  <th className="px-5 py-3 font-medium">Kursi</th>
+                  <th className="px-5 py-3 font-medium">Keluarga</th>
+                  <th className="px-5 py-3 font-medium">Qty</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium text-right">Aksi</th>
                 </tr>
@@ -159,9 +176,14 @@ export function ParticipantsClient({
                     <td className="px-5 py-3.5 text-(--color-slate)">
                       {formatPhoneDisplay(p.phone)}
                     </td>
-                    <td className="px-5 py-3.5 text-(--color-slate)">{p.company || "—"}</td>
+                    <td className="px-5 py-3.5 font-mono text-(--color-slate)">
+                      {p.seat_number}
+                    </td>
                     <td className="px-5 py-3.5">
-                      <CategoryBadge category={p.category} />
+                      <FamilyGroupBadge familyGroup={p.family_group} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <QtyBadge qty={p.qty} />
                     </td>
                     <td className="px-5 py-3.5">
                       <StatusBadge status={p.status} />
@@ -170,7 +192,7 @@ export function ParticipantsClient({
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => setModal({ type: "qr", participant: p })}
-                          title="Lihat QR code"
+                          title="Lihat tiket QR"
                           className="rounded-md p-2 text-(--color-slate) hover:bg-slate-100 hover:text-(--color-ink)"
                         >
                           <QrCode className="h-4 w-4" />
@@ -209,7 +231,8 @@ export function ParticipantsClient({
       </div>
 
       <p className="mt-3 text-xs text-(--color-slate)">
-        Menampilkan {filtered.length} dari {participants.length} peserta
+        Menampilkan {filtered.length} dari {participants.length} tiket/QR · total{" "}
+        {totalPax} tamu
       </p>
 
       {modal.type === "create" && (
@@ -234,7 +257,7 @@ export function ParticipantsClient({
         <QrCardModal participant={modal.participant} onClose={() => setModal({ type: "none" })} />
       )}
       {modal.type === "broadcast" && (
-        <BroadcastModal onClose={() => setModal({ type: "none" })} />
+        <BroadcastModal onClose={() => setModal({ type: "none" })} familyOptions={familyOptions} />
       )}
     </div>
   );
