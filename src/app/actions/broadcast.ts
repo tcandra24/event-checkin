@@ -21,23 +21,13 @@ const FONNTE_ENDPOINT_TEXT = "https://api.fonnte.com/send";
 
 /**
  * Mengganti placeholder pada template pesan dengan data masing-masing peserta.
- * Placeholder yang didukung: {nama}, {kursi}, {keluarga}, {qty}, {kode}
+ * Placeholder yang didukung: {nama}, {kursi}, {keluarga}, {qty}, {kode}, {link_rsvp}
  */
-function renderMessage(template: string, p: Participant): string {
-  return template
-    .replaceAll("{nama}", p.name)
-    .replaceAll("{kursi}", p.seat_number)
-    .replaceAll("{keluarga}", p.family_group)
-    .replaceAll("{qty}", String(p.qty))
-    .replaceAll("{kode}", p.code);
+function renderMessage(template: string, p: Participant, appUrl: string): string {
+  return template.replaceAll("{nama}", p.name).replaceAll("{kursi}", p.seat_number).replaceAll("{keluarga}", p.family_group).replaceAll("{qty}", String(p.qty)).replaceAll("{kode}", p.code).replaceAll("{link_rsvp}", `${appUrl}/rsvp/${p.code}`);
 }
 
-async function sendOne(
-  token: string,
-  phone: string,
-  message: string,
-  imageBuffer?: Buffer
-): Promise<{ ok: boolean; reason?: string }> {
+async function sendOne(token: string, phone: string, message: string, imageBuffer?: Buffer): Promise<{ ok: boolean; reason?: string }> {
   try {
     if (imageBuffer) {
       const form = new FormData();
@@ -76,17 +66,12 @@ async function sendOne(
   }
 }
 
-export async function sendBroadcast(input: {
-  message: string;
-  filter: BroadcastFilter;
-  includeQr: boolean;
-}): Promise<BroadcastResult> {
+export async function sendBroadcast(input: { message: string; filter: BroadcastFilter; includeQr: boolean }): Promise<BroadcastResult> {
   const token = process.env.FONNTE_TOKEN;
   if (!token) {
     return {
       success: false,
-      error:
-        "FONNTE_TOKEN belum diatur di environment variable. Tambahkan di .env.local.",
+      error: "FONNTE_TOKEN belum diatur di environment variable. Tambahkan di .env.local.",
     };
   }
 
@@ -99,6 +84,8 @@ export async function sendBroadcast(input: {
   if (!userData.user) {
     return { success: false, error: "Sesi habis, silakan login kembali." };
   }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
 
   let query = supabase.from("participants").select("*");
   if (input.filter === "belum_hadir" || input.filter === "hadir") {
@@ -118,11 +105,7 @@ export async function sendBroadcast(input: {
 
   let settings: { event_name: string; event_address: string; ticket_background_url: string | null } | null = null;
   if (input.includeQr) {
-    const { data } = await supabase
-      .from("event_settings")
-      .select("event_name, event_address, ticket_background_url")
-      .eq("id", 1)
-      .maybeSingle();
+    const { data } = await supabase.from("event_settings").select("event_name, event_address, ticket_background_url").eq("id", 1).maybeSingle();
     settings = data;
   }
 
@@ -132,7 +115,7 @@ export async function sendBroadcast(input: {
 
   // Kirim berurutan dengan jeda singkat untuk menghindari rate-limit Fonnte.
   for (const p of participants as Participant[]) {
-    const message = renderMessage(input.message, p);
+    const message = renderMessage(input.message, p, appUrl);
 
     let imageBuffer: Buffer | undefined;
     if (input.includeQr) {
@@ -141,6 +124,7 @@ export async function sendBroadcast(input: {
           participantName: p.name,
           code: p.code,
           qty: p.qty,
+          rsvp_qty_response: p.rsvp_qty_response,
           eventName: settings?.event_name || "Nama Acara Anda",
           eventAddress: settings?.event_address || "",
           backgroundUrl: settings?.ticket_background_url || null,
@@ -154,10 +138,7 @@ export async function sendBroadcast(input: {
 
     if (result.ok) {
       totalSuccess++;
-      await supabase
-        .from("participants")
-        .update({ wa_sent_at: new Date().toISOString(), wa_status: "sent" })
-        .eq("id", p.id);
+      await supabase.from("participants").update({ wa_sent_at: new Date().toISOString(), wa_status: "sent" }).eq("id", p.id);
     } else {
       totalFailed++;
       failedNames.push(p.name);

@@ -30,9 +30,11 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
   const isPublicAsset = request.nextUrl.pathname.startsWith("/_next");
+  const isPublicRsvp = request.nextUrl.pathname.startsWith("/rsvp");
 
-  // Semua halaman selain /login wajib login.
-  if (!user && !isAuthRoute && !isPublicAsset) {
+  // Semua halaman selain /login dan /rsvp/[code] (halaman publik untuk
+  // peserta konfirmasi kehadiran tanpa login) wajib login.
+  if (!user && !isAuthRoute && !isPublicAsset && !isPublicRsvp) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

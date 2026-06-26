@@ -1,4 +1,9 @@
 export type ParticipantStatus = "belum_hadir" | "hadir";
+export type RsvpStatus =
+  | "belum_konfirmasi"
+  | "menunggu_approval"
+  | "dikonfirmasi_hadir"
+  | "dikonfirmasi_tidak_hadir";
 
 export interface Participant {
   id: string;
@@ -12,6 +17,11 @@ export interface Participant {
   checked_in_at: string | null;
   wa_sent_at: string | null;
   wa_status: string | null;
+  rsvp_status: RsvpStatus;
+  rsvp_qty_response: number | null;
+  rsvp_responded_at: string | null;
+  rsvp_reviewed_by: string | null;
+  rsvp_reviewed_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

@@ -1,45 +1,65 @@
 # Event Check-in — Aplikasi Manajemen Peserta & QR Check-in
 
-Aplikasi web untuk mengelola peserta undangan acara: input data peserta, generate
-tiket QR code bergambar otomatis sebagai identitas, scan QR untuk check-in di
-lokasi acara, laporan kehadiran real-time, dan broadcast WhatsApp ke peserta
-lewat Fonnte.
+Aplikasi web untuk mengelola peserta undangan acara: import data peserta dari
+Excel, kirim konfirmasi kehadiran (RSVP) sebelum tiket final dibagikan,
+generate tiket QR code bergambar otomatis, scan QR untuk check-in di lokasi
+acara, laporan kehadiran real-time, dan broadcast WhatsApp ke peserta lewat
+Fonnte.
 
 ## Fitur
 
-1. **Login panitia** (Supabase Auth) — wajib login untuk akses semua halaman.
-2. **Input Peserta** — tambah, ubah, hapus data peserta dengan field:
-   - Nama & nomor WhatsApp
-   - **Nomor kursi** dan **Keluarga/rombongan** (dipakai untuk grouping &
-     filter di laporan maupun broadcast)
-   - **Qty** — jumlah pax dalam 1 tiket/QR (bisa lebih dari 1 orang per QR)
-   
-   Setiap peserta otomatis mendapat kode unik dan **tiket QR bergambar**
-   (background custom + nama acara + alamat + nama tamu + jumlah pax).
-3. **Pengaturan Tiket** — atur nama acara, alamat, dan unggah 1 gambar latar
-   yang akan dipakai sebagai desain tiket untuk seluruh peserta (mirip
-   undangan fisik bertema).
-4. **Laporan Kehadiran** — statistik hadir/belum hadir (dihitung per orang,
-   bukan cuma per tiket), pencarian, filter per keluarga/rombongan, dan
-   ekspor ke CSV.
-5. **Scan QR Code** — gunakan kamera HP/laptop, alat scanner QR fisik
-   (USB/Bluetooth), atau ketik kode secara manual. Status otomatis berubah
-   dari "belum hadir" menjadi "hadir". Jika qty > 1, panitia akan diberi tahu
-   bahwa tiket tersebut berlaku untuk beberapa orang sekaligus.
-6. **Broadcast WhatsApp** — kirim pesan ke seluruh/sebagian peserta (filter
-   per status kehadiran atau per keluarga/rombongan) lewat Fonnte, termasuk
-   melampirkan gambar tiket QR bergambar milik tiap peserta.
+1. **Login panitia** (Supabase Auth) — wajib login untuk akses semua halaman
+   kecuali halaman publik RSVP.
+2. **Input Peserta** — tambah, ubah, hapus data peserta dengan field nama,
+   nomor WhatsApp, **nomor kursi**, **keluarga/rombongan**, dan **qty**
+   (jumlah pax maksimal per tiket). Setiap peserta otomatis mendapat kode
+   unik dan **tiket QR bergambar**.
+3. **Import dari Excel** — unduh template `.xlsx` siap pakai, isi data
+   peserta secara massal, unggah kembali untuk diimpor sekaligus. Ada
+   preview & validasi per baris sebelum data benar-benar disimpan.
+4. **Konfirmasi Kehadiran (RSVP)** — kirim tautan RSVP ke peserta lewat
+   WhatsApp. Peserta membuka tautan (tanpa perlu login), memilih **Hadir**
+   (lalu mengisi jumlah orang yang akan datang, maksimal sesuai qty tiket)
+   atau **Tidak Hadir**. Konfirmasi "Hadir" masuk ke status **Menunggu
+   Approval** dan perlu ditinjau oleh panitia sebelum dianggap final.
+5. **Pengaturan Tiket** — atur nama acara, alamat, dan unggah 1 gambar latar
+   yang dipakai sebagai desain tiket untuk seluruh peserta.
+6. **Laporan Kehadiran** — statistik hadir/belum hadir (dihitung per orang),
+   status RSVP, pencarian, filter per keluarga/rombongan, dan ekspor CSV.
+7. **Scan QR Code** — kamera HP/laptop, alat scanner QR fisik (USB/Bluetooth),
+   atau input manual. Status otomatis berubah jadi "hadir". Satu QR = satu
+   kali check-in untuk seluruh rombongan dalam tiket itu.
+8. **Broadcast WhatsApp** — dua mode: **RSVP** (kirim tautan konfirmasi
+   kehadiran) atau **Tiket QR final** (kirim gambar tiket lengkap, dipakai
+   setelah RSVP disetujui). Bisa difilter per status kehadiran atau per
+   keluarga/rombongan.
+
+## Alur kerja yang disarankan
+
+1. Import peserta dari Excel (atau input manual satu-satu).
+2. Atur nama acara, alamat, dan gambar latar tiket di **Pengaturan Tiket**.
+3. Broadcast WhatsApp mode **RSVP** ke seluruh peserta — mereka akan
+   menerima tautan untuk konfirmasi kehadiran.
+4. Peserta membuka tautan, pilih hadir (isi jumlah orang) atau tidak hadir.
+5. Panitia meninjau setiap konfirmasi "Hadir" di halaman **Input Peserta**
+   (ada notifikasi jumlah RSVP yang menunggu approval) dan menyetujui jumlah
+   final yang hadir.
+6. Setelah disetujui, broadcast WhatsApp lagi dengan mode **Tiket QR final**
+   untuk mengirim tiket bergambar lengkap ke peserta yang sudah dikonfirmasi.
+7. Saat hari acara, gunakan halaman **Scan QR Code** untuk check-in.
 
 ## Stack teknologi
 
 - **Next.js 16** (App Router, Server Actions, TypeScript)
 - **Tailwind CSS v4** untuk styling
-- **Supabase** — database Postgres + Auth + Storage (cukup pakai paket gratis)
+- **Supabase** — database Postgres + Auth + Storage + RPC function untuk
+  akses publik RSVP yang aman (cukup pakai paket gratis)
 - **Fonnte** — gateway WhatsApp untuk broadcast
 - `qrcode` — generate kode QR mentah
 - `@napi-rs/canvas` — render gambar tiket lengkap (background + QR + teks) di
   server, tanpa perlu Chromium/Puppeteer
 - `html5-qrcode` — scan QR lewat kamera browser
+- `xlsx` (SheetJS) — baca/tulis file Excel untuk fitur import & template
 
 ---
 
@@ -52,21 +72,25 @@ lewat Fonnte.
    copy seluruh isinya, paste ke SQL Editor, lalu **Run**.
 
    Script ini membuat:
-   - Tabel `participants` (nama, kursi, keluarga, qty, kode QR, status)
+   - Tabel `participants` (nama, kursi, keluarga, qty, kode QR, status
+     kehadiran, status RSVP)
    - Tabel `broadcast_logs` (riwayat pengiriman broadcast)
    - Tabel `event_settings` (nama acara, alamat, URL gambar latar tiket)
    - Storage bucket `ticket-assets` (untuk menyimpan gambar latar tiket)
-   - Row Level Security: seluruh akses wajib login, tidak ada akses
-     publik/anonim ke data peserta.
+   - Function `get_participant_for_rsvp` & `submit_rsvp` (RPC aman untuk
+     halaman RSVP publik)
+   - Row Level Security: seluruh akses ke tabel wajib login. Akses publik
+     (anon) HANYA bisa lewat dua RPC function di atas, dan dibatasi hanya
+     bisa membaca/menulis data RSVP milik 1 kode tiket yang valid.
 
-### Jika project Supabase kamu SUDAH PERNAH menjalankan schema versi lama
-(yang masih punya kolom `company`/`category`)
+### Jika project Supabase kamu sudah pernah menjalankan schema versi lama
 
-Jalankan [`sql/migration_v2.sql`](./sql/migration_v2.sql) di SQL Editor —
-ini akan mengubah struktur tabel tanpa menghapus data peserta yang sudah ada.
-Kolom `company`/`category` lama akan otomatis dipindahkan isinya ke kolom
-`family_group` baru sebagai titik awal, lalu kamu bisa sesuaikan manual lewat
-halaman Input Peserta.
+- Versi lama masih punya kolom `company`/`category` →
+  jalankan [`sql/migration_v2.sql`](./sql/migration_v2.sql) dulu.
+- Sudah punya `seat_number`/`family_group`/`qty` tapi belum ada RSVP →
+  jalankan [`sql/migration_v3.sql`](./sql/migration_v3.sql).
+
+Kedua migrasi aman dijalankan tanpa menghapus data peserta yang sudah ada.
 
 ### Kredensial & akun
 
@@ -96,11 +120,18 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=isi-dengan-anon-public-key
 FONNTE_TOKEN=isi-dengan-token-fonnte
 NEXT_PUBLIC_EVENT_NAME="Event Check-in"
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
+> **Penting**: `NEXT_PUBLIC_APP_URL` harus diisi dengan domain produksi yang
+> benar setelah deploy (misal `https://checkin.acara-kamu.com`), karena nilai
+> ini dipakai untuk membangun tautan RSVP (`{link_rsvp}`) yang dikirim lewat
+> WhatsApp. Jika salah/masih `localhost`, peserta tidak akan bisa membuka
+> tautan tersebut dari HP mereka.
+>
 > Nama acara, alamat, dan gambar latar tiket **tidak** diatur lewat
-> environment variable — semua diatur lewat halaman **Pengaturan Tiket** di
-> dalam aplikasi setelah login, supaya bisa diubah kapan saja tanpa redeploy.
+> environment variable — semua diatur lewat halaman **Pengaturan Tiket**
+> setelah login.
 
 ## 4. Menjalankan secara lokal
 
@@ -111,7 +142,7 @@ npm run dev
 
 Buka [http://localhost:3000](http://localhost:3000), login dengan akun
 panitia, lalu buka **Pengaturan Tiket** untuk mengisi nama acara, alamat, dan
-mengunggah gambar latar tiket sebelum mulai input peserta.
+mengunggah gambar latar tiket sebelum mulai input/import peserta.
 
 ## 5. Deploy ke produksi
 
@@ -119,7 +150,8 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 
 1. Push project ini ke repository GitHub.
 2. Import repository tersebut di Vercel.
-3. Tambahkan environment variables yang sama seperti `.env.local`.
+3. Tambahkan environment variables yang sama seperti `.env.local` — jangan
+   lupa set `NEXT_PUBLIC_APP_URL` ke domain produksi yang benar.
 4. Deploy. Halaman scan QR membutuhkan koneksi **HTTPS** agar kamera browser
    bisa diakses — Vercel otomatis menyediakan HTTPS.
 
@@ -131,97 +163,137 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 
 ## Struktur halaman
 
-| Route          | Keterangan                                                   |
-|----------------|---------------------------------------------------------------|
-| `/login`       | Halaman login panitia                                        |
-| `/peserta`     | Input, ubah, hapus peserta + kirim broadcast WhatsApp         |
-| `/laporan`     | Statistik & tabel kehadiran (per orang & per tiket), ekspor CSV |
-| `/scan`        | Scan QR code (kamera/alat scanner/manual) untuk check-in      |
-| `/pengaturan`  | Atur nama acara, alamat, dan gambar latar tiket                |
+| Route            | Login? | Keterangan                                                   |
+|------------------|--------|-----------------------------------------------------------------|
+| `/login`         | -      | Halaman login panitia                                           |
+| `/peserta`       | Wajib  | Input/import peserta, review RSVP, kirim broadcast WhatsApp      |
+| `/laporan`       | Wajib  | Statistik & tabel kehadiran + status RSVP, ekspor CSV            |
+| `/scan`          | Wajib  | Scan QR code (kamera/alat scanner/manual) untuk check-in         |
+| `/pengaturan`    | Wajib  | Atur nama acara, alamat, dan gambar latar tiket                  |
+| `/rsvp/[code]`   | Publik | Halaman bagi peserta mengonfirmasi kehadiran, tanpa login        |
 
 ## Field data peserta
 
-| Field           | Keterangan                                                          |
-|-----------------|------------------------------------------------------------------------|
-| `name`          | Nama tamu/peserta                                                    |
-| `phone`         | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                 |
-| `seat_number`   | Nomor kursi — teks bebas, juga dipakai untuk pencarian/grouping       |
-| `family_group`  | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast per kelompok |
-| `qty`           | Jumlah pax yang berlaku untuk 1 QR code (boleh lebih dari 1)          |
-| `code`          | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`           |
-| `status`        | `belum_hadir` atau `hadir`                                            |
+| Field                | Keterangan                                                          |
+|----------------------|------------------------------------------------------------------------|
+| `name`               | Nama tamu/peserta                                                    |
+| `phone`              | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                 |
+| `seat_number`        | Nomor kursi — teks bebas, juga dipakai untuk pencarian/grouping       |
+| `family_group`       | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast |
+| `qty`                | Jumlah pax maksimal yang berlaku untuk 1 QR code                      |
+| `code`               | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`           |
+| `status`             | Status kehadiran fisik: `belum_hadir` atau `hadir`                    |
+| `rsvp_status`        | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir` |
+| `rsvp_qty_response`  | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)           |
+
+## Import peserta dari Excel
+
+1. Buka halaman **Input Peserta**, klik **Import Excel**.
+2. Klik **Unduh template** untuk mendapatkan file `.xlsx` dengan kolom yang
+   sudah benar: `Nama`, `No HP`, `Nomor Kursi`, `Keluarga`, `Qty`.
+3. Isi data di Excel (boleh pakai aplikasi spreadsheet apa saja), simpan.
+4. Kembali ke aplikasi, unggah file tersebut.
+5. Aplikasi menampilkan **preview** seluruh baris beserta status validasinya
+   (baris yang datanya tidak lengkap akan ditandai dan otomatis dilewati).
+6. Klik **Import** untuk menyimpan seluruh baris yang valid. Setiap baris
+   otomatis mendapat kode unik dan tiket QR seperti input manual.
+
+> Kolom `Qty` boleh dikosongkan — defaultnya akan dianggap 1. Nama kolom
+> bersifat fleksibel (mendukung beberapa variasi penulisan seperti "No. HP"
+> atau "Pax"), tapi paling aman tetap memakai template yang disediakan.
+
+## Konfirmasi Kehadiran (RSVP)
+
+### Mengirim tautan RSVP ke peserta
+
+1. Buka halaman **Input Peserta**, klik **Broadcast WA**.
+2. Pilih jenis broadcast **RSVP (link konfirmasi)**.
+3. Pilih target penerima, sesuaikan isi pesan jika perlu (placeholder
+   `{link_rsvp}` akan otomatis diganti dengan tautan unik tiap peserta).
+4. Kirim. Setiap peserta menerima tautan `https://domainmu.com/rsvp/KODE_TIKET`.
+
+### Yang dilihat & dilakukan peserta
+
+Peserta membuka tautan tanpa perlu login atau install apa pun, melihat nama
+mereka dan kapasitas maksimal tiket, lalu memilih:
+- **Ya, saya akan hadir** → diminta mengisi jumlah orang yang datang
+  (1 sampai maksimal qty tiket), lalu submit.
+- **Tidak dapat hadir** → langsung tercatat sebagai tidak hadir.
+
+Jika peserta sudah pernah mengisi RSVP sebelumnya, tautan yang sama akan
+menampilkan status terakhir mereka (bukan form kosong lagi), agar tidak ada
+isi ulang yang membingungkan.
+
+### Meninjau (approve) RSVP
+
+Konfirmasi "Hadir" dari peserta **tidak otomatis final** — masuk ke status
+**Menunggu Approval**. Di halaman **Input Peserta**:
+
+- Ada banner notifikasi jumlah RSVP yang menunggu peninjauan.
+- Setiap baris dengan status "Menunggu approval" bisa diklik untuk membuka
+  modal review, di mana panitia bisa melihat jumlah yang diminta peserta dan
+  menyesuaikan jumlah final sebelum menyetujui (atau menolak).
+- Setelah disetujui, status berubah menjadi "RSVP: Hadir" dan jumlah final
+  tersimpan di `rsvp_qty_response`.
+
+Setelah seluruh/sebagian RSVP disetujui, panitia bisa mengirim broadcast
+mode **Tiket QR final** ke peserta yang sudah dikonfirmasi (filter "Sudah
+hadir" tidak relevan di sini — gunakan filter per keluarga/rombongan atau
+kirim ke semua lalu cek manual, sesuai kebutuhan acara).
 
 ## Cara kerja QR code & tiket bergambar
 
-- Setiap peserta mendapat `code` unik saat dibuat.
+- Setiap peserta mendapat `code` unik saat dibuat (manual atau via import).
 - QR code yang digenerate berisi teks `code` tersebut secara langsung.
-- Tiket yang dilihat/diunduh/dikirim ke peserta bukan sekadar gambar QR
-  polos, melainkan **kartu lengkap** yang dirender di server, terdiri dari:
-  - Gambar latar yang diunggah di halaman Pengaturan Tiket
-  - Nama acara & alamat (dari Pengaturan Tiket)
-  - Kode tiket + QR code
-  - Nama peserta
-  - Jumlah pax ("Valid for N person(s)")
-- Saat di-scan di halaman `/scan`, aplikasi mencari peserta dengan `code`
-  yang sama dan mengubah status menjadi `hadir` beserta timestamp check-in.
-  **Satu QR = satu kali check-in**, terlepas dari berapa nilai `qty`-nya —
-  artinya 1 scan untuk 1 tiket akan menandai seluruh rombongan dalam tiket
-  itu sebagai hadir sekaligus. Halaman scan akan menampilkan info jumlah pax
-  agar panitia tahu berapa orang yang seharusnya masuk bersamaan.
-- Scan ulang pada QR yang sama akan menampilkan pesan "Sudah check-in
-  sebelumnya" tanpa mengubah data, sehingga aman dari double-scan.
+- Tiket yang dilihat/diunduh/dikirim ke peserta adalah **kartu lengkap**
+  yang dirender di server: gambar latar dari Pengaturan Tiket + nama acara +
+  alamat + kode tiket + QR + nama peserta + jumlah pax.
+- Saat di-scan di halaman `/scan`, status berubah menjadi `hadir` beserta
+  timestamp check-in. **Satu QR = satu kali check-in** untuk seluruh
+  rombongan dalam tiket itu, terlepas dari nilai `qty`.
+- Scan ulang pada QR yang sama menampilkan "Sudah check-in sebelumnya" tanpa
+  mengubah data, sehingga aman dari double-scan.
 
 ## Mode pemindaian di halaman Scan
 
-Halaman `/scan` punya dua mode yang bisa dipilih lewat tombol toggle:
-
 - **Kamera** — memakai kamera HP/laptop langsung dari browser.
-- **Alat Scanner / Manual** — untuk panitia yang memakai alat scanner QR
-  fisik (USB/Bluetooth, yang bekerja seperti keyboard) atau ingin mengetik
-  kode secara manual jika QR rusak/tidak terbaca. Kolom input selalu
-  auto-focus sehingga panitia tidak perlu klik ulang antar peserta.
-
-## Mengatur tampilan tiket (Pengaturan Tiket)
-
-1. Buka halaman **Pengaturan Tiket** di sidebar.
-2. Isi **nama acara** dan **alamat/lokasi** — keduanya akan tercetak di
-   bagian atas setiap tiket.
-3. Unggah **1 gambar latar** (disarankan rasio potret, mendekati 800×1420px,
-   bertema sesuai acara — misalnya foto venue, ilustrasi, atau desain
-   undangan). Gambar ini dipakai sebagai background untuk seluruh tiket
-   peserta secara otomatis.
-4. Simpan. Tiket baru yang dibuka/diunduh/dikirim sesudahnya akan langsung
-   memakai pengaturan terbaru.
+- **Alat Scanner / Manual** — untuk alat scanner QR fisik (USB/Bluetooth,
+  bekerja seperti keyboard) atau input manual jika QR rusak/tidak terbaca.
+  Kolom input selalu auto-focus sehingga panitia tidak perlu klik ulang
+  antar peserta.
 
 ## Mengirim broadcast WhatsApp
 
-1. Buka halaman **Input Peserta**, klik **Broadcast WA**.
-2. Pilih target penerima: semua peserta, hanya yang belum/sudah hadir, atau
-   per keluarga/rombongan tertentu (daftar keluarga otomatis muncul sesuai
-   data yang sudah diinput).
-3. Tulis pesan. Placeholder yang didukung:
-   - `{nama}` — nama peserta
-   - `{kursi}` — nomor kursi
-   - `{keluarga}` — nama keluarga/rombongan
-   - `{qty}` — jumlah pax dalam tiket tersebut
-   - `{kode}` — kode unik peserta
-4. Centang "Lampirkan gambar tiket QR" jika ingin setiap peserta menerima
-   tiket bergambar lengkap (bukan QR polos) langsung lewat WhatsApp.
-5. Klik **Kirim broadcast**. Status pengiriman per peserta tersimpan di
-   kolom `wa_status`, ringkasan tersimpan di tabel `broadcast_logs`.
+Tersedia dua mode (toggle di bagian atas modal broadcast):
+
+- **RSVP (link konfirmasi)** — mengirim tautan agar peserta mengonfirmasi
+  kehadiran. Placeholder tambahan `{link_rsvp}` tersedia di mode ini.
+- **Tiket QR final** — mengirim gambar tiket bergambar lengkap, dipakai
+  setelah RSVP disetujui atau untuk acara yang tidak memakai RSVP sama sekali.
+
+Placeholder pesan yang didukung di kedua mode: `{nama}`, `{kursi}`,
+`{keluarga}`, `{qty}`, `{kode}`. Target penerima bisa difilter berdasarkan
+status kehadiran atau per keluarga/rombongan (daftar keluarga otomatis
+muncul sesuai data yang sudah diinput).
 
 > Fonnte memiliki rate limit; aplikasi ini mengirim pesan secara berurutan
-> dengan jeda singkat antar pesan untuk menghindari penolakan oleh Fonnte.
-> Karena setiap tiket bergambar di-render ulang saat broadcast, proses ini
-> butuh waktu sedikit lebih lama untuk jumlah peserta yang besar — biarkan
+> dengan jeda singkat antar pesan. Mode Tiket QR final butuh waktu sedikit
+> lebih lama karena setiap gambar di-render ulang saat broadcast — biarkan
 > halaman tetap terbuka sampai proses selesai.
 
 ## Catatan keamanan
 
-- Semua halaman (`/peserta`, `/laporan`, `/scan`, `/pengaturan`) **wajib
-  login**, ditegakkan lewat Next.js Middleware dan Supabase Row Level
-  Security di level database.
-- Tidak ada endpoint publik/anonim yang bisa mengubah data peserta.
+- Semua halaman dashboard (`/peserta`, `/laporan`, `/scan`, `/pengaturan`)
+  **wajib login**, ditegakkan lewat Next.js Middleware dan Supabase Row
+  Level Security.
+- Halaman `/rsvp/[code]` sengaja dibuat publik (tanpa login) agar peserta
+  bisa mengisi konfirmasi langsung dari WhatsApp. Akses ini dibatasi ketat
+  lewat 2 RPC function (`get_participant_for_rsvp`, `submit_rsvp`):
+  - Peserta hanya bisa melihat/mengubah data miliknya sendiri, dan hanya
+    jika mereka tahu kode tiket yang valid (acak, 8 karakter, sulit ditebak).
+  - Peserta hanya bisa mengubah kolom-kolom RSVP — tidak bisa menyentuh
+    status check-in, qty kapasitas, atau data peserta lain mana pun.
+  - Tidak ada query yang mengizinkan publik melihat daftar seluruh peserta.
 - Gambar latar tiket disimpan di Supabase Storage bucket `ticket-assets`
   dengan akses baca publik (diperlukan agar gambar bisa dimuat saat membuat
   tiket dan saat dikirim ke Fonnte), tapi hanya panitia yang login yang bisa

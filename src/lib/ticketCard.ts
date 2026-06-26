@@ -5,6 +5,7 @@ export interface TicketCardInput {
   participantName: string;
   code: string;
   qty: number;
+  rsvp_qty_response: number | null;
   eventName: string;
   eventAddress: string;
   backgroundUrl: string | null;
@@ -13,11 +14,7 @@ export interface TicketCardInput {
 const CARD_WIDTH = 800;
 const CARD_HEIGHT = 1420;
 
-function wrapText(
-  ctx: SKRSContext2D,
-  text: string,
-  maxWidth: number
-): string[] {
+function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(" ");
   const lines: string[] = [];
   let current = "";
@@ -41,9 +38,7 @@ function wrapText(
  * tengah berisi kode + QR + nama tamu, dan info jumlah pax di bawahnya.
  * Mengembalikan buffer PNG yang siap diunduh atau dikirim lewat Fonnte.
  */
-export async function generateTicketCard(
-  input: TicketCardInput
-): Promise<Buffer> {
+export async function generateTicketCard(input: TicketCardInput): Promise<Buffer> {
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const ctx = canvas.getContext("2d");
 
@@ -54,13 +49,7 @@ export async function generateTicketCard(
       const scale = Math.max(CARD_WIDTH / bg.width, CARD_HEIGHT / bg.height);
       const drawW = bg.width * scale;
       const drawH = bg.height * scale;
-      ctx.drawImage(
-        bg,
-        (CARD_WIDTH - drawW) / 2,
-        (CARD_HEIGHT - drawH) / 2,
-        drawW,
-        drawH
-      );
+      ctx.drawImage(bg, (CARD_WIDTH - drawW) / 2, (CARD_HEIGHT - drawH) / 2, drawW, drawH);
     } catch {
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
@@ -80,7 +69,7 @@ export async function generateTicketCard(
   // 3. Nama acara & alamat di bagian atas
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff";
-  ctx.font = "600 34px sans-serif";
+  ctx.font = "600 80px sans-serif";
   const eventLines = wrapText(ctx, input.eventName, CARD_WIDTH - 120);
   let y = 130;
   for (const line of eventLines) {
@@ -89,7 +78,7 @@ export async function generateTicketCard(
   }
 
   if (input.eventAddress) {
-    ctx.font = "400 22px sans-serif";
+    ctx.font = "400 34px sans-serif";
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     const addressLines = wrapText(ctx, input.eventAddress, CARD_WIDTH - 140);
     y += 8;
@@ -128,13 +117,7 @@ export async function generateTicketCard(
     margin: 1,
   });
   const qrImg = await loadImage(qrDataUrl);
-  ctx.drawImage(
-    qrImg,
-    CARD_WIDTH / 2 - qrSize / 2,
-    panelY + 90,
-    qrSize,
-    qrSize
-  );
+  ctx.drawImage(qrImg, CARD_WIDTH / 2 - qrSize / 2, panelY + 90, qrSize, qrSize);
 
   // 7. Nama peserta di bawah QR
   ctx.fillStyle = "#0f172a";
@@ -147,20 +130,12 @@ export async function generateTicketCard(
   ctx.fillText("VALID FOR", CARD_WIDTH / 2, panelY + panelHeight + 60);
   ctx.fillStyle = "#ffffff";
   ctx.font = "700 30px serif";
-  ctx.fillText(
-    `${input.qty} Person${input.qty > 1 ? "s" : ""}`,
-    CARD_WIDTH / 2,
-    panelY + panelHeight + 100
-  );
+  ctx.fillText(`${input.rsvp_qty_response ? `${input.rsvp_qty_response} / ` : ""}${input.qty} Person${input.qty > 1 ? "s" : ""}`, CARD_WIDTH / 2, panelY + panelHeight + 100);
 
   // 9. Footer instruksi
   ctx.fillStyle = "rgba(255,255,255,0.8)";
   ctx.font = "600 20px sans-serif";
-  ctx.fillText(
-    "TUNJUKKAN QR CODE INI DI LOKASI ACARA",
-    CARD_WIDTH / 2,
-    CARD_HEIGHT - 60
-  );
+  ctx.fillText("TUNJUKKAN QR CODE INI DI LOKASI ACARA", CARD_WIDTH / 2, CARD_HEIGHT - 60);
 
   return canvas.encode("png");
 }

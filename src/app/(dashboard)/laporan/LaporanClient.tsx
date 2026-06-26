@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search, Download, UserCheck, UserX, Users2 } from "lucide-react";
 import type { Participant } from "@/lib/types";
-import { StatusBadge, FamilyGroupBadge, QtyBadge } from "@/components/Badges";
+import { StatusBadge, FamilyGroupBadge, QtyBadge, RsvpBadge } from "@/components/Badges";
 import { formatPhoneDisplay } from "@/lib/utils";
 
 function formatDateTime(iso: string | null): string {
@@ -53,6 +53,19 @@ export function LaporanClient({ participants }: { participants: Participant[] })
     });
   }, [participants, search, statusFilter, familyFilter]);
 
+  function rsvpLabel(status: Participant["rsvp_status"]): string {
+    switch (status) {
+      case "menunggu_approval":
+        return "Menunggu Approval";
+      case "dikonfirmasi_hadir":
+        return "Dikonfirmasi Hadir";
+      case "dikonfirmasi_tidak_hadir":
+        return "Dikonfirmasi Tidak Hadir";
+      default:
+        return "Belum Konfirmasi";
+    }
+  }
+
   function handleExportCsv() {
     const headers = [
       "Nama",
@@ -60,8 +73,10 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       "Nomor Kursi",
       "Keluarga",
       "Qty",
-      "Status",
+      "Status Kehadiran",
       "Waktu Check-in",
+      "Status RSVP",
+      "Jumlah RSVP",
       "Kode",
     ];
     const rows = filtered.map((p) => [
@@ -72,6 +87,8 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       p.qty,
       p.status === "hadir" ? "Hadir" : "Belum Hadir",
       formatDateTime(p.checked_in_at),
+      rsvpLabel(p.rsvp_status),
+      p.rsvp_qty_response ?? "",
       p.code,
     ]);
 
@@ -201,7 +218,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       </div>
 
       <div className="mt-5 overflow-hidden rounded-xl border border-(--color-border) bg-white">
-        <div className="overflow-x-auto thin-scrollbar">
+        <div className="hidden md:block overflow-x-auto thin-scrollbar">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
@@ -211,13 +228,14 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                 <th className="px-5 py-3 font-medium">Keluarga</th>
                 <th className="px-5 py-3 font-medium">Qty</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">RSVP</th>
                 <th className="px-5 py-3 font-medium">Waktu Check-in</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-(--color-border)">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-(--color-slate)">
+                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-(--color-slate)">
                     Tidak ada data yang cocok dengan pencarian atau filter ini.
                   </td>
                 </tr>
@@ -242,6 +260,9 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                     <td className="px-5 py-3.5">
                       <StatusBadge status={p.status} />
                     </td>
+                    <td className="px-5 py-3.5">
+                      <RsvpBadge status={p.rsvp_status} />
+                    </td>
                     <td className="px-5 py-3.5 text-(--color-slate)">
                       {formatDateTime(p.checked_in_at)}
                     </td>
@@ -251,6 +272,42 @@ export function LaporanClient({ participants }: { participants: Participant[] })
             </tbody>
           </table>
         </div>
+
+        {/* CARD VIEW MOBILE — read-only, ringkas tanpa tombol aksi (laporan bersifat lihat saja) */}
+        {filtered.length === 0 ? (
+          <p className="md:hidden px-5 py-10 text-center text-sm text-(--color-slate)">
+            Tidak ada data yang cocok dengan pencarian atau filter ini.
+          </p>
+        ) : (
+          <div className="md:hidden divide-y divide-(--color-border)">
+            {filtered.map((p) => (
+              <div key={p.id} className="px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-(--color-ink)">{p.name}</p>
+                    <p className="text-xs text-(--color-slate)">
+                      {formatPhoneDisplay(p.phone)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-xs text-(--color-slate)">
+                    {formatDateTime(p.checked_in_at)}
+                  </p>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs text-(--color-slate)">
+                    Kursi {p.seat_number}
+                  </span>
+                  <FamilyGroupBadge familyGroup={p.family_group} />
+                  <QtyBadge qty={p.qty} />
+                </div>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <StatusBadge status={p.status} />
+                  <RsvpBadge status={p.rsvp_status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-(--color-slate)">

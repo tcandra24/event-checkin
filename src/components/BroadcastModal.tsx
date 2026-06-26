@@ -1,12 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, X, Send, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, X, Send, CheckCircle2, XCircle, Link2, Ticket } from "lucide-react";
 import { sendBroadcast, type BroadcastFilter } from "@/app/actions/broadcast";
 
-const DEFAULT_TEMPLATE = `Halo {nama},
+type BroadcastMode = "rsvp" | "ticket";
 
-Anda diundang untuk menghadiri acara kami.
+const RSVP_TEMPLATE = `Halo {nama},
+
+Anda diundang untuk menghadiri acara kami bersama {keluarga} (maks. {qty} orang).
+
+Mohon konfirmasi kehadiranmu melalui tautan berikut:
+{link_rsvp}
+
+Terima kasih!`;
+
+const TICKET_TEMPLATE = `Halo {nama},
+
+Berikut tiket QR code kamu untuk menghadiri acara kami.
 Nomor kursi: {kursi}
 Rombongan: {keluarga}
 Berlaku untuk: {qty} orang
@@ -20,9 +31,9 @@ export function BroadcastModal({
   onClose: () => void;
   familyOptions: string[];
 }) {
-  const [message, setMessage] = useState(DEFAULT_TEMPLATE);
+  const [mode, setMode] = useState<BroadcastMode>("rsvp");
+  const [message, setMessage] = useState(RSVP_TEMPLATE);
   const [filter, setFilter] = useState<BroadcastFilter>("belum_hadir");
-  const [includeQr, setIncludeQr] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -32,12 +43,21 @@ export function BroadcastModal({
     failedNames: string[];
   } | null>(null);
 
+  function handleModeChange(newMode: BroadcastMode) {
+    setMode(newMode);
+    setMessage(newMode === "rsvp" ? RSVP_TEMPLATE : TICKET_TEMPLATE);
+  }
+
   async function handleSend() {
     setLoading(true);
     setError(null);
     setResult(null);
 
-    const res = await sendBroadcast({ message, filter, includeQr });
+    const res = await sendBroadcast({
+      message,
+      filter,
+      includeQr: mode === "ticket",
+    });
     setLoading(false);
 
     if (!res.success) {
@@ -126,6 +146,43 @@ export function BroadcastModal({
           <div className="px-6 py-5">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
+                Jenis broadcast
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("rsvp")}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    mode === "rsvp"
+                      ? "border-(--color-ink) bg-(--color-ink) text-white"
+                      : "border-(--color-border) text-(--color-slate) hover:bg-slate-50"
+                  }`}
+                >
+                  <Link2 className="h-4 w-4" />
+                  RSVP (link konfirmasi)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("ticket")}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    mode === "ticket"
+                      ? "border-(--color-ink) bg-(--color-ink) text-white"
+                      : "border-(--color-border) text-(--color-slate) hover:bg-slate-50"
+                  }`}
+                >
+                  <Ticket className="h-4 w-4" />
+                  Tiket QR final
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-(--color-slate)">
+                {mode === "rsvp"
+                  ? "Mengirim tautan agar peserta mengonfirmasi kehadiran sebelum tiket final dikirim."
+                  : "Mengirim gambar tiket QR code lengkap — gunakan setelah RSVP peserta disetujui."}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">
                 Kirim ke
               </label>
               <select
@@ -164,21 +221,12 @@ export function BroadcastModal({
                 <code className="rounded bg-slate-100 px-1">{"{kursi}"}</code>{" "}
                 <code className="rounded bg-slate-100 px-1">{"{keluarga}"}</code>{" "}
                 <code className="rounded bg-slate-100 px-1">{"{qty}"}</code>{" "}
-                <code className="rounded bg-slate-100 px-1">{"{kode}"}</code>
+                <code className="rounded bg-slate-100 px-1">{"{kode}"}</code>{" "}
+                {mode === "rsvp" && (
+                  <code className="rounded bg-slate-100 px-1">{"{link_rsvp}"}</code>
+                )}
               </p>
             </div>
-
-            <label className="mt-4 flex items-center gap-2.5">
-              <input
-                type="checkbox"
-                checked={includeQr}
-                onChange={(e) => setIncludeQr(e.target.checked)}
-                className="h-4 w-4 rounded border-(--color-border)"
-              />
-              <span className="text-sm text-(--color-ink)">
-                Lampirkan gambar tiket QR code pribadi setiap peserta
-              </span>
-            </label>
 
             {error && (
               <p className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">

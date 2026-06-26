@@ -13,12 +13,20 @@ create table if not exists public.participants (
   phone text not null,
   seat_number text not null,              -- nomor kursi, juga dipakai untuk grouping
   family_group text not null,             -- nama keluarga/rombongan, juga dipakai untuk grouping
-  qty integer not null default 1 check (qty >= 1),  -- jumlah pax dalam 1 tiket/QR
+  qty integer not null default 1 check (qty >= 1),  -- jumlah pax dalam 1 tiket/QR (kapasitas maksimal)
   code text not null unique,              -- kode unik yang di-encode ke QR
   status text not null default 'belum_hadir' check (status in ('belum_hadir', 'hadir')),
   checked_in_at timestamptz,
   wa_sent_at timestamptz,                 -- terakhir kali broadcast WA terkirim ke peserta ini
   wa_status text,                         -- status terakhir pengiriman WA: sent / failed
+  -- Konfirmasi kehadiran (RSVP) yang diisi peserta sendiri lewat link publik
+  rsvp_status text not null default 'belum_konfirmasi' check (
+    rsvp_status in ('belum_konfirmasi', 'menunggu_approval', 'dikonfirmasi_hadir', 'dikonfirmasi_tidak_hadir')
+  ),
+  rsvp_qty_response integer,              -- jumlah orang yang akan datang, diisi peserta (<= qty)
+  rsvp_responded_at timestamptz,          -- kapan peserta mengisi form RSVP
+  rsvp_reviewed_by uuid references auth.users(id),  -- panitia yang approve/tolak
+  rsvp_reviewed_at timestamptz,
   created_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -28,6 +36,7 @@ create index if not exists participants_status_idx on public.participants (statu
 create index if not exists participants_code_idx on public.participants (code);
 create index if not exists participants_family_group_idx on public.participants (family_group);
 create index if not exists participants_seat_number_idx on public.participants (seat_number);
+create index if not exists participants_rsvp_status_idx on public.participants (rsvp_status);
 
 -- 2. Auto-update kolom updated_at setiap kali baris diubah
 create or replace function public.set_updated_at()
@@ -121,6 +130,83 @@ create policy "authenticated_all_event_settings"
   to authenticated
   using (true)
   with check (true);
+
+-- =========================================================
+-- AKSES PUBLIK TERBATAS UNTUK HALAMAN RSVP (/rsvp/[code])
+-- Peserta mengisi konfirmasi kehadiran TANPA login. Akses publik
+-- ini sengaja dibatasi: tidak bisa SELECT semua baris (hanya lewat
+-- RPC function di bawah yang mewajibkan kode tiket yang valid), dan
+-- tidak bisa mengubah kolom selain milik RSVP itu sendiri.
+-- =========================================================
+
+-- Function ini dipanggil dari halaman publik untuk mengambil data
+-- peserta berdasarkan code, dengan kolom yang dibatasi (security definer
+-- supaya tidak perlu policy SELECT publik penuh ke seluruh tabel).
+create or replace function public.get_participant_for_rsvp(p_code text)
+returns table (
+  id uuid,
+  name text,
+  qty integer,
+  family_group text,
+  rsvp_status text,
+  rsvp_qty_response integer
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, name, qty, family_group, rsvp_status, rsvp_qty_response
+  from public.participants
+  where code = p_code
+  limit 1;
+$$;
+
+grant execute on function public.get_participant_for_rsvp(text) to anon, authenticated;
+
+-- Function untuk submit RSVP. Memvalidasi qty_response <= qty kapasitas,
+-- dan hanya mengubah kolom-kolom RSVP (tidak bisa menyentuh status
+-- kehadiran/check-in atau data lain).
+create or replace function public.submit_rsvp(
+  p_code text,
+  p_attending boolean,
+  p_qty_response integer
+)
+returns table (success boolean, message text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_max_qty integer;
+  v_id uuid;
+begin
+  select id, qty into v_id, v_max_qty
+  from public.participants
+  where code = p_code
+  limit 1;
+
+  if v_id is null then
+    return query select false, 'Kode tiket tidak ditemukan.';
+    return;
+  end if;
+
+  if p_attending and (p_qty_response is null or p_qty_response < 1 or p_qty_response > v_max_qty) then
+    return query select false, format('Jumlah orang yang hadir harus antara 1 dan %s.', v_max_qty);
+    return;
+  end if;
+
+  update public.participants
+  set
+    rsvp_status = case when p_attending then 'menunggu_approval' else 'dikonfirmasi_tidak_hadir' end,
+    rsvp_qty_response = case when p_attending then p_qty_response else 0 end,
+    rsvp_responded_at = now()
+  where id = v_id;
+
+  return query select true, 'Konfirmasi berhasil disimpan.';
+end;
+$$;
+
+grant execute on function public.submit_rsvp(text, boolean, integer) to anon, authenticated;
 
 -- =========================================================
 -- SUPABASE STORAGE: bucket untuk gambar template tiket

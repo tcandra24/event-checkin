@@ -203,7 +203,7 @@ export function ScanClient() {
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
           {mode === "camera" ? (
             <>
-              <div className="relative mx-auto aspect-square w-full max-w-md overflow-hidden rounded-xl bg-(--color-ink)">
+              <div className="relative mx-auto aspect-square w-full max-w-md max-h-[60vh] overflow-hidden rounded-xl bg-(--color-ink)">
                 <div id={SCANNER_ELEMENT_ID} className="h-full w-full" />
                 {!cameraActive && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-(--color-ink) text-white/70">
