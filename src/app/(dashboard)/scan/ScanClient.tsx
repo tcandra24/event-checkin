@@ -1,26 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import {
-  QrCode,
-  CheckCircle2,
-  AlertCircle,
-  Camera,
-  CameraOff,
-  Armchair,
-  Keyboard,
-  ScanLine,
-} from "lucide-react";
+import { QrCode, CheckCircle2, AlertCircle, Camera, CameraOff, Armchair, Keyboard, ScanLine } from "lucide-react";
 import { checkInByCode } from "@/app/actions/checkin";
 import { FamilyGroupBadge, QtyBadge } from "@/components/Badges";
 import { formatPhoneDisplay } from "@/lib/utils";
 import type { Participant } from "@/lib/types";
 
-type ScanFeedback =
-  | { type: "idle" }
-  | { type: "loading" }
-  | { type: "success"; participant: Participant; alreadyCheckedIn: boolean }
-  | { type: "error"; message: string };
+type ScanFeedback = { type: "idle" } | { type: "loading" } | { type: "success"; participant: Participant; alreadyCheckedIn: boolean } | { type: "error"; message: string };
 
 type ScanMode = "camera" | "device";
 
@@ -67,17 +54,13 @@ export function ScanClient() {
       // Hindari proses ganda untuk kode yang sama dalam jeda singkat (debounce kamera,
       // karena html5-qrcode bisa memanggil callback berulang kali untuk QR yang sama).
       const now = Date.now();
-      if (
-        lastCodeRef.current &&
-        lastCodeRef.current.code === decodedText &&
-        now - lastCodeRef.current.at < 4000
-      ) {
+      if (lastCodeRef.current && lastCodeRef.current.code === decodedText && now - lastCodeRef.current.at < 4000) {
         return;
       }
       lastCodeRef.current = { code: decodedText, at: now };
       runCheckIn(decodedText);
     },
-    [runCheckIn]
+    [runCheckIn],
   );
 
   // Submit dari input manual ATAU dari alat scanner USB/Bluetooth.
@@ -106,15 +89,11 @@ export function ScanClient() {
         },
         () => {
           // ignore scan failure per-frame, ini normal saat kamera mencari QR
-        }
+        },
       );
       setCameraActive(true);
     } catch (e) {
-      setCameraError(
-        e instanceof Error
-          ? e.message
-          : "Tidak dapat mengakses kamera. Pastikan izin kamera diberikan."
-      );
+      setCameraError(e instanceof Error ? e.message : "Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
       setCameraActive(false);
     }
   }, [handleDetected]);
@@ -164,35 +143,15 @@ export function ScanClient() {
 
   return (
     <div className="px-8 py-7">
-      <h1 className="font-display text-2xl font-semibold text-(--color-ink)">
-        Scan QR Code Peserta
-      </h1>
-      <p className="mt-1 text-sm text-(--color-slate)">
-        {mode === "camera"
-          ? "Arahkan kamera ke QR code pada tiket peserta untuk mencatat kehadiran."
-          : "Arahkan alat scanner QR ke tiket peserta, atau ketik kode secara manual."}
-      </p>
+      <h1 className="font-display text-2xl font-semibold text-(--color-ink)">Scan QR Code Peserta</h1>
+      <p className="mt-1 text-sm text-(--color-slate)">{mode === "camera" ? "Arahkan kamera ke QR code pada tiket peserta untuk mencatat kehadiran." : "Arahkan alat scanner QR ke tiket peserta, atau ketik kode secara manual."}</p>
 
       <div className="mt-5 inline-flex gap-1.5 rounded-lg bg-slate-100 p-1">
-        <button
-          onClick={() => setMode("camera")}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold transition-colors ${
-            mode === "camera"
-              ? "bg-white text-(--color-ink) shadow-sm"
-              : "text-(--color-slate)"
-          }`}
-        >
+        <button onClick={() => setMode("camera")} className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold transition-colors ${mode === "camera" ? "bg-white text-(--color-ink) shadow-sm" : "text-(--color-slate)"}`}>
           <Camera className="h-4 w-4" />
           Kamera
         </button>
-        <button
-          onClick={() => setMode("device")}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold transition-colors ${
-            mode === "device"
-              ? "bg-white text-(--color-ink) shadow-sm"
-              : "text-(--color-slate)"
-          }`}
-        >
+        <button onClick={() => setMode("device")} className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold transition-colors ${mode === "device" ? "bg-white text-(--color-ink) shadow-sm" : "text-(--color-slate)"}`}>
           <ScanLine className="h-4 w-4" />
           Alat Scanner / Manual
         </button>
@@ -222,18 +181,12 @@ export function ScanClient() {
 
               <div className="mt-4 flex justify-center">
                 {cameraActive ? (
-                  <button
-                    onClick={stopCamera}
-                    className="flex items-center gap-2 rounded-lg border border-(--color-border) px-5 py-2.5 text-sm font-semibold text-(--color-ink) hover:bg-slate-50"
-                  >
+                  <button onClick={stopCamera} className="flex items-center gap-2 rounded-lg border border-(--color-border) px-5 py-2.5 text-sm font-semibold text-(--color-ink) hover:bg-slate-50">
                     <CameraOff className="h-4 w-4" />
                     Matikan kamera
                   </button>
                 ) : (
-                  <button
-                    onClick={startCamera}
-                    className="flex items-center gap-2 rounded-lg bg-(--color-ink) px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-                  >
+                  <button onClick={startCamera} className="flex items-center gap-2 rounded-lg bg-(--color-ink) px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90">
                     <Camera className="h-4 w-4" />
                     Aktifkan kamera
                   </button>
@@ -261,34 +214,20 @@ export function ScanClient() {
                     autoFocus
                     className="flex-1 rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm font-mono focus:border-(--color-ink) focus:outline-none"
                   />
-                  <button
-                    type="submit"
-                    className="shrink-0 rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-                  >
+                  <button type="submit" className="shrink-0 rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">
                     Cek
                   </button>
                 </div>
-                <p className="mt-2 text-center text-xs text-(--color-slate-light)">
-                  Kolom ini tetap aktif menunggu input — tidak perlu klik ulang
-                  antar peserta.
-                </p>
+                <p className="mt-2 text-center text-xs text-(--color-slate-light)">Kolom ini tetap aktif menunggu input — tidak perlu klik ulang antar peserta.</p>
               </form>
             </div>
           )}
 
           {/* Feedback hasil scan terbaru, besar dan jelas untuk dilihat dari jarak agak jauh */}
           <div className="mt-5">
-            {feedback.type === "idle" && (
-              <div className="rounded-xl border border-dashed border-(--color-border) px-5 py-6 text-center text-sm text-(--color-slate)">
-                Hasil scan akan muncul di sini
-              </div>
-            )}
+            {feedback.type === "idle" && <div className="rounded-xl border border-dashed border-(--color-border) px-5 py-6 text-center text-sm text-(--color-slate)">Hasil scan akan muncul di sini</div>}
 
-            {feedback.type === "loading" && (
-              <div className="rounded-xl bg-slate-100 px-5 py-6 text-center text-sm text-(--color-slate)">
-                Memeriksa kode...
-              </div>
-            )}
+            {feedback.type === "loading" && <div className="rounded-xl bg-slate-100 px-5 py-6 text-center text-sm text-(--color-slate)">Memeriksa kode...</div>}
 
             {feedback.type === "error" && (
               <div className="flex items-start gap-3 rounded-xl bg-red-50 px-5 py-4 text-red-700">
@@ -301,44 +240,23 @@ export function ScanClient() {
             )}
 
             {feedback.type === "success" && (
-              <div
-                className={`rounded-xl px-5 py-4 ${
-                  feedback.alreadyCheckedIn ? "bg-(--color-amber-soft)" : "bg-(--color-emerald-soft)"
-                }`}
-              >
+              <div className={`rounded-xl px-5 py-4 ${feedback.alreadyCheckedIn ? "bg-(--color-amber-soft)" : "bg-(--color-emerald-soft)"}`}>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2
-                    className={`h-5 w-5 ${
-                      feedback.alreadyCheckedIn ? "text-amber-600" : "text-(--color-emerald)"
-                    }`}
-                  />
-                  <p
-                    className={`font-display text-sm font-semibold ${
-                      feedback.alreadyCheckedIn ? "text-amber-800" : "text-emerald-800"
-                    }`}
-                  >
-                    {feedback.alreadyCheckedIn ? "Sudah check-in sebelumnya" : "Check-in berhasil"}
-                  </p>
+                  <CheckCircle2 className={`h-5 w-5 ${feedback.alreadyCheckedIn ? "text-amber-600" : "text-(--color-emerald)"}`} />
+                  <p className={`font-display text-sm font-semibold ${feedback.alreadyCheckedIn ? "text-amber-800" : "text-emerald-800"}`}>{feedback.alreadyCheckedIn ? "Sudah check-in sebelumnya" : "Check-in berhasil"}</p>
                 </div>
-                <p className="mt-2 font-display text-lg font-semibold text-(--color-ink)">
-                  {feedback.participant.name}
-                </p>
+                <p className="mt-2 font-display text-lg font-semibold text-(--color-ink)">{feedback.participant.name}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <FamilyGroupBadge familyGroup={feedback.participant.family_group} />
-                  <QtyBadge qty={feedback.participant.qty} />
+                  <QtyBadge qty={feedback.participant.qty} rsvp_qty_response={feedback.participant.rsvp_qty_response} />
                   <span className="flex items-center gap-1 text-xs text-(--color-slate)">
                     <Armchair className="h-3 w-3" />
                     Kursi {feedback.participant.seat_number}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-(--color-slate)">
-                  {formatPhoneDisplay(feedback.participant.phone)}
-                </p>
+                <p className="mt-1 text-xs text-(--color-slate)">{formatPhoneDisplay(feedback.participant.phone)}</p>
                 {feedback.participant.qty > 1 && (
-                  <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs font-medium text-(--color-ink)">
-                    Tiket ini berlaku untuk {feedback.participant.qty} orang —
-                    pastikan seluruh rombongan sudah memasuki lokasi acara.
-                  </p>
+                  <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs font-medium text-(--color-ink)">Tiket ini berlaku untuk {feedback.participant.qty} orang — pastikan seluruh rombongan sudah memasuki lokasi acara.</p>
                 )}
               </div>
             )}
@@ -347,23 +265,18 @@ export function ScanClient() {
 
         {/* Kolom riwayat scan */}
         <div className="rounded-xl border border-(--color-border) bg-white p-5">
-          <h2 className="font-display text-sm font-semibold text-(--color-ink)">
-            Riwayat Scan Sesi Ini
-          </h2>
+          <h2 className="font-display text-sm font-semibold text-(--color-ink)">Riwayat Scan Sesi Ini</h2>
           {recentScans.length === 0 ? (
             <p className="mt-3 text-sm text-(--color-slate)">Belum ada peserta yang di-scan.</p>
           ) : (
             <ul className="mt-3 space-y-2.5">
               {recentScans.map((p, idx) => (
-                <li
-                  key={`${p.id}-${idx}`}
-                  className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5"
-                >
+                <li key={`${p.id}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-(--color-ink)">{p.name}</p>
                     <p className="text-xs text-(--color-slate)">Kursi {p.seat_number}</p>
                   </div>
-                  <QtyBadge qty={p.qty} />
+                  <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                 </li>
               ))}
             </ul>
