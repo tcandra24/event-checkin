@@ -16,6 +16,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Event Check-in",
   description: "Aplikasi manajemen peserta undangan & check-in QR code",
+  keywords: ["event", "invitation", "check-in", "QR code", "undangan"],
 };
 
 export default function RootLayout({
@@ -24,10 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="id"
-      className={`${lexend.variable} ${inter.variable} h-full antialiased`}
-    >
+    <html lang="id" className={`${lexend.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full">{children}</body>
     </html>
   );
