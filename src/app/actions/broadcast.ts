@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { waitUntil } from "@vercel/functions";
 
 export interface BroadcastResult {
   success: boolean;
@@ -99,21 +100,26 @@ export async function sendBroadcast(input: { message: string; filter: BroadcastF
     return { success: false, error: itemsError.message };
   }
 
-  // Picu pemrosesan batch pertama. Sengaja TIDAK di-await — supaya Server
-  // Action ini langsung return ke UI tanpa menunggu proses pengiriman
-  // (yang bisa berjalan belasan menit) selesai dulu.
+  // Picu pemrosesan batch pertama. Dibungkus waitUntil() (bukan asal
+  // fetch tanpa await) supaya Vercel tidak memutus request ini di tengah
+  // jalan sesaat setelah Server Action ini return ke UI — waitUntil()
+  // menjamin promise ini benar-benar tuntas terkirim walau response sudah
+  // balik ke pengguna lebih dulu (sehingga UI tetap responsif/cepat).
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
   const secret = process.env.BROADCAST_PROCESS_SECRET;
 
   if (secret) {
-    fetch(`${appUrl}/api/broadcast/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: job.id, secret }),
-    }).catch(() => {
-      // Diabaikan — jika trigger awal ini gagal, job akan tetap berstatus
-      // "queued" dan perlu dipicu ulang manual (lihat catatan di README).
-    });
+    waitUntil(
+      fetch(`${appUrl}/api/broadcast/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: job.id, secret }),
+      }).catch(() => {
+        // Diabaikan di sini — jika trigger awal ini tetap gagal terkirim,
+        // job akan tetap berstatus "queued" dan akan dipulihkan oleh
+        // Vercel Cron Job (/api/broadcast/cron) pada jadwal berikutnya.
+      }),
+    );
   }
 
   revalidatePath("/peserta");

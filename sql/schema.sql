@@ -78,10 +78,14 @@ create table if not exists public.broadcast_jobs (
   total_success integer not null default 0,
   total_failed integer not null default 0,
   -- Jeda antar pesan (ms) dan ukuran batch per pemanggilan endpoint proses,
-  -- disimpan per job agar mudah disesuaikan tanpa redeploy.
+  -- disimpan per job agar mudah disesuaikan tanpa redeploy. batch_size
+  -- sengaja dibuat kecil (default 3) karena setiap panggilan endpoint
+  -- proses dibatasi waktu eksekusi oleh Vercel (maxDuration) — dengan jeda
+  -- 3-8 detik per pesan, batch besar berisiko terpotong di tengah jalan
+  -- sebelum batch tersebut selesai diproses sepenuhnya.
   delay_min_ms integer not null default 3000,
   delay_max_ms integer not null default 8000,
-  batch_size integer not null default 10,
+  batch_size integer not null default 3,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   finished_at timestamptz

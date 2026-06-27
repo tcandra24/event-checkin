@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@supabase/supabase-js";
 import { generateTicketCard } from "@/lib/ticketCard";
 import type { Participant } from "@/lib/types";
@@ -14,7 +15,17 @@ import type { Participant } from "@/lib/types";
 // karena perlu dipanggil dari server itu sendiri (fetch ke URL publiknya),
 // yang lebih natural lewat HTTP endpoint biasa.
 
-export const maxDuration = 60; // detik, batas waktu maksimal 1 kali pemanggilan batch
+// Batas waktu maksimal 1 kali pemanggilan batch, dalam detik. PENTING:
+// nilai ini harus konsisten dengan kombinasi batch_size & delay di tabel
+// broadcast_jobs — pastikan (batch_size × rata-rata delay per pesan) +
+// overhead request tetap berada SEDIKIT DI BAWAH nilai ini, atau batch
+// berisiko terpotong paksa oleh Vercel di tengah proses (item yang belum
+// sempat diupdate statusnya akan tertinggal di status "pending").
+//
+// Plan Vercel Hobby & Pro keduanya mendukung maxDuration hingga 60 detik
+// untuk Serverless Functions biasa (App Router Route Handler) — namun
+// tetap diberi sedikit margin di bawah limit untuk jaga-jaga.
+export const maxDuration = 60;
 
 const FONNTE_ENDPOINT = "https://api.fonnte.com/send";
 
@@ -72,17 +83,28 @@ async function sendOne(token: string, phone: string, message: string, imageBuffe
   }
 }
 
-/** Memicu panggilan batch berikutnya tanpa menunggu hasilnya (fire and forget). */
-function triggerNextBatch(appUrl: string, jobId: string, secret: string) {
-  fetch(`${appUrl}/api/broadcast/process`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jobId, secret }),
-  }).catch(() => {
-    // Diabaikan: kalau trigger ini gagal terkirim, job akan macet di status
-    // "processing". Untuk produksi, pertimbangkan menambah cron pengaman
-    // terpisah yang memeriksa job macet dan memicu ulang.
-  });
+/**
+ * Memicu panggilan batch berikutnya. Mengembalikan promise-nya (bukan
+ * fire-and-forget) supaya bisa dibungkus waitUntil() — ini penting di
+ * Vercel: serverless function di sana dibekukan/dimatikan segera setelah
+ * response dikirim, sehingga fetch() yang ditembak tanpa ditunggu berisiko
+ * terputus di tengah jalan sebelum benar-benar terkirim ke server tujuan.
+ * waitUntil() memberi tahu runtime Vercel untuk menunda penghentian function
+ * sampai promise ini selesai, meski response sudah dikembalikan ke caller.
+ */
+async function triggerNextBatch(appUrl: string, jobId: string, secret: string) {
+  try {
+    await fetch(`${appUrl}/api/broadcast/process`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId, secret }),
+    });
+  } catch {
+    // Diabaikan di sini — jika trigger ini tetap gagal terkirim (misal
+    // gangguan jaringan), job akan macet di status "processing" dan akan
+    // dipulihkan oleh Vercel Cron Job (/api/broadcast/cron) pada
+    // pemanggilan terjadwal berikutnya.
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -232,7 +254,7 @@ export async function POST(req: NextRequest) {
   const { count: remainingCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "pending");
 
   if (remainingCount && remainingCount > 0) {
-    triggerNextBatch(appUrl, jobId, secret);
+    waitUntil(triggerNextBatch(appUrl, jobId, secret));
     return NextResponse.json({ message: "Batch selesai, melanjutkan batch berikutnya." });
   }
 

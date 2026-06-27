@@ -89,8 +89,14 @@ Fonnte.
   jalankan [`sql/migration_v2.sql`](./sql/migration_v2.sql) dulu.
 - Sudah punya `seat_number`/`family_group`/`qty` tapi belum ada RSVP →
   jalankan [`sql/migration_v3.sql`](./sql/migration_v3.sql).
+- Belum punya tabel `broadcast_jobs`/`broadcast_job_items` (sistem antrian
+  broadcast) → jalankan [`sql/migration_v4.sql`](./sql/migration_v4.sql).
+- Sudah punya `broadcast_jobs` tapi `batch_size` defaultnya masih 10 (versi
+  lama, berisiko timeout di Vercel) → jalankan
+  [`sql/migration_v5.sql`](./sql/migration_v5.sql) untuk menurunkannya ke 3.
 
-Kedua migrasi aman dijalankan tanpa menghapus data peserta yang sudah ada.
+Semua migrasi di atas aman dijalankan tanpa menghapus data peserta yang
+sudah ada — jalankan secara berurutan sesuai versi schema kamu saat ini.
 
 ### Kredensial & akun
 
@@ -311,7 +317,7 @@ dalam satu proses. Saat tombol "Kirim broadcast" diklik:
    penerima sebagai **item antrian** (tabel `broadcast_job_items`), semuanya
    berstatus `pending`. Langkah ini instan.
 2. Endpoint `/api/broadcast/process` dipicu untuk memproses **satu batch
-   kecil** (default 10 penerima) dari job tersebut — setiap pesan dikirim
+   kecil** (default 3 penerima) dari job tersebut — setiap pesan dikirim
    satu per satu dengan **jeda acak 3–8 detik** (bukan jeda tetap, supaya
    pola pengiriman terlihat manusiawi, bukan seperti bot).
 3. Setelah satu batch selesai, endpoint itu otomatis memicu dirinya sendiri
@@ -327,19 +333,39 @@ bukan bug performa.
 
 Parameter jeda (`delay_min_ms`, `delay_max_ms`) dan ukuran batch
 (`batch_size`) tersimpan per job di tabel `broadcast_jobs` dan bisa
-disesuaikan langsung lewat SQL Editor Supabase jika perlu (misal dipersempit
-untuk volume sangat besar), tanpa perlu mengubah kode atau redeploy.
+disesuaikan langsung lewat SQL Editor Supabase jika perlu, tanpa perlu
+mengubah kode atau redeploy.
 
-> **Keandalan pengaman (Vercel Cron Job)**: mekanisme self-chaining
-> mengandalkan kemampuan server memanggil dirinya sendiri lewat HTTP
-> request. Jika satu panggilan gagal terkirim (jaringan terputus sesaat,
-> dsb), job bisa macet di status `processing` dengan sisa item `pending`
-> yang tidak lanjut terproses. Sebagai pengaman, project ini sudah
-> menyertakan **Vercel Cron Job** (`vercel.json` + endpoint
-> `/api/broadcast/cron`) yang berjalan setiap 5 menit untuk memeriksa job
-> aktif yang tidak ada aktivitas pengiriman selama 5 menit terakhir, lalu
-> otomatis memicu ulang `/api/broadcast/process` untuk job tersebut. Lihat
-> bagian [Setup Vercel Cron Job](#setup-vercel-cron-job) di bawah.
+> **Catatan teknis penting (batas waktu eksekusi di Vercel)**: setiap
+> pemanggilan `/api/broadcast/process` dibatasi waktu eksekusi maksimal 60
+> detik (`maxDuration`) oleh Vercel. `batch_size` default sengaja dibuat
+> kecil (3, bukan angka besar) karena dengan jeda 3–8 detik per pesan
+> ditambah waktu request ke Fonnte (dan generate gambar tiket jika mode
+> QR), satu batch besar bisa melebihi 60 detik dan **terpotong paksa di
+> tengah jalan** — menyebabkan item yang sedang diproses tertinggal di
+> status `pending` tanpa pernah diperbarui (gejalanya: broadcast terlihat
+> "tersangkut"). Jika ingin menaikkan `batch_size`, pastikan estimasi total
+> waktunya (`batch_size × rata-rata delay + overhead`) tetap jauh di bawah
+> 60 detik.
+>
+> Pemicu batch berikutnya (self-chaining) juga dibungkus
+> [`waitUntil()`](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package#waituntil)
+> dari paket `@vercel/functions`, bukan sekadar `fetch()` tanpa `await`.
+> Tanpa ini, Vercel bisa langsung membekukan/menghentikan eksekusi
+> serverless function segera setelah response dikirim ke caller — termasuk
+> memutus request lanjutan yang baru saja ditembak tapi belum sempat
+> benar-benar terkirim. `waitUntil()` memberi tahu Vercel untuk menunda
+> penghentian function sampai promise tersebut benar-benar tuntas.
+
+> **Keandalan pengaman (Vercel Cron Job)**: meski sudah memakai `waitUntil()`
+> di atas, mekanisme self-chaining tetap bisa gagal pada kondisi langka
+> (misal gangguan jaringan sesaat), membuat job macet di status
+> `processing` dengan sisa item `pending` yang tidak lanjut terproses.
+> Sebagai pengaman tambahan, project ini menyertakan **Vercel Cron Job**
+> (`vercel.json` + endpoint `/api/broadcast/cron`) yang memeriksa job aktif
+> tanpa aktivitas pengiriman dan memicu ulang `/api/broadcast/process`
+> untuk job tersebut. Lihat bagian [Setup Vercel Cron Job](#setup-vercel-cron-job)
+> di bawah — perhatikan juga batasan frekuensi cron sesuai plan Vercel kamu.
 
 > Mode Tiket QR final butuh waktu sedikit lebih lama per pesan dibanding mode
 > RSVP, karena setiap gambar tiket di-render ulang saat broadcast berjalan.
