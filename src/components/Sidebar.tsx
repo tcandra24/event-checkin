@@ -43,7 +43,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
             const Icon = item.icon;
             return (
               <Link key={item.href} href={item.href} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? "bg-white text-(--color-ink)" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>
-                <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+                <Icon className="h-4.5 w-4.5" strokeWidth={2} />
                 {item.label}
               </Link>
             );
@@ -53,7 +53,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
         <div className="border-t border-white/10 px-3 py-4">
           {userEmail && <p className="truncate px-3 pb-2 text-xs text-white/40">{userEmail}</p>}
           <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-            <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
+            <LogOut className="h-4.5 w-4.5" strokeWidth={2} />
             Keluar
           </button>
         </div>
