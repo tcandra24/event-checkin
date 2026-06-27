@@ -370,6 +370,66 @@ mengubah kode atau redeploy.
 > Mode Tiket QR final butuh waktu sedikit lebih lama per pesan dibanding mode
 > RSVP, karena setiap gambar tiket di-render ulang saat broadcast berjalan.
 
+## Monitoring & debugging broadcast WhatsApp
+
+Ada dua lapis informasi yang bisa kamu cek kalau ada pesan yang gagal
+terkirim atau prosesnya terasa aneh:
+
+### 1. Detail error langsung di UI
+
+Di modal **Kirim Broadcast WhatsApp**, begitu ada pesan yang gagal, kotak
+merah akan menampilkan **nama peserta beserta alasan gagalnya** (bukan
+cuma daftar nama) — informasi ini diambil langsung dari respons asli Fonnte
+untuk pesan tersebut (misal nomor tidak valid, device terputus, kuota
+habis, dsb), dan tetap terlihat selagi broadcast masih berjalan, tidak
+perlu menunggu seluruh proses selesai.
+
+Detail ini juga tersimpan permanen di kolom `error_message` pada tabel
+`broadcast_job_items`, dan kolom `wa_status` pada tabel `participants`
+(format: `failed: <alasan>`) — bisa dicek langsung lewat Supabase Table
+Editor/SQL Editor kapan saja, misalnya:
+
+```sql
+select p.name, p.phone, bji.error_message, bji.sent_at
+from broadcast_job_items bji
+join participants p on p.id = bji.participant_id
+where bji.job_id = '<id-job-yang-ingin-dicek>'
+  and bji.status = 'failed';
+```
+
+### 2. Log mentah server (paling detail) di Vercel
+
+Untuk melihat **seluruh** proses pengiriman secara verbose — termasuk
+response mentah dari Fonnte untuk setiap pesan, berapa lama jeda yang
+dipakai, kapan setiap batch dimulai/selesai, dan kapan job dianggap
+selesai — buka **Vercel Dashboard → Project kamu → Logs** (atau tab
+**Runtime Logs**), lalu filter/cari kata kunci `[broadcast]`.
+
+Setiap baris log mengikuti format yang mudah ditelusuri, contoh:
+
+```
+[broadcast] Job 3f9a... status saat ini: processing (total 5 penerima)
+[broadcast] Job 3f9a...: memproses batch berisi 3 item...
+[broadcast] -> Budi Santoso [EVT-7F3K9Q2A] (628123456789): mengirim pesan teks...
+[broadcast] -> Budi Santoso [EVT-7F3K9Q2A] (628123456789): HTTP 200, response Fonnte: {"status":true,...}
+[broadcast] -> Budi Santoso [EVT-7F3K9Q2A] (628123456789): berhasil terkirim.
+[broadcast] Menunggu 5230ms sebelum pesan berikutnya...
+[broadcast] -> Siti Aminah [EVT-XYZ12345] (628129876543): mengirim pesan teks...
+[broadcast] -> Siti Aminah [EVT-XYZ12345] (628129876543): GAGAL — Nomor tidak terdaftar di WhatsApp
+```
+
+Log ini berguna untuk kasus yang tidak tertangkap di kolom `error_message`
+biasa, misalnya:
+
+- Endpoint `/api/broadcast/process` ditolak (`secret tidak cocok`) — tanda
+  `BROADCAST_PROCESS_SECRET` salah/tidak konsisten antar environment.
+- Self-chaining ke batch berikutnya tidak terpicu — cek apakah ada baris
+  log "memicu batch berikutnya" yang muncul tapi tidak diikuti baris log
+  batch baru dalam waktu wajar (indikasi `waitUntil()` gagal, jaringan
+  bermasalah, atau function dihentikan paksa).
+- Error generate gambar tiket (`Gagal generate tiket untuk ...`) — biasanya
+  terkait gambar latar yang rusak/tidak bisa diunduh dari Storage.
+
 ## Setup Vercel Cron Job
 
 Fitur ini berjalan otomatis setelah deploy ke Vercel, **tidak perlu setup

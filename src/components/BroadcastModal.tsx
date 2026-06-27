@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, X, Send, CheckCircle2, XCircle, Link2, Ticket, Clock } from "lucide-react";
-import { sendBroadcast, getBroadcastJobStatus, type BroadcastFilter } from "@/app/actions/broadcast";
+import { sendBroadcast, getBroadcastJobStatus, type BroadcastFilter, type BroadcastFailedItem } from "@/app/actions/broadcast";
 
 type BroadcastMode = "rsvp" | "ticket";
 
@@ -35,7 +35,7 @@ interface JobProgress {
   totalSuccess: number;
   totalFailed: number;
   totalPending: number;
-  failedNames: string[];
+  failedItems: BroadcastFailedItem[];
 }
 
 export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void; familyOptions: string[] }) {
@@ -61,7 +61,7 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
           totalSuccess: res.totalSuccess ?? 0,
           totalFailed: res.totalFailed ?? 0,
           totalPending: res.totalPending ?? 0,
-          failedNames: res.failedNames ?? [],
+          failedItems: res.failedItems ?? [],
         });
       }
     }, POLL_INTERVAL_MS);
@@ -97,7 +97,7 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
       totalSuccess: 0,
       totalFailed: 0,
       totalPending: res.totalRecipients ?? 0,
-      failedNames: [],
+      failedItems: [],
     });
   }
 
@@ -157,12 +157,20 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
               </div>
             </div>
 
-            {isDone && progress.failedNames.length > 0 && (
+            {progress.failedItems.length > 0 && (
               <div className="mt-4 rounded-lg bg-red-50 px-3 py-2.5">
                 <p className="flex items-center gap-1.5 text-sm font-medium text-red-700">
-                  <XCircle className="h-4 w-4" /> Gagal terkirim ke:
+                  <XCircle className="h-4 w-4" />
+                  {progress.failedItems.length} pesan gagal terkirim — detail error:
                 </p>
-                <p className="mt-1 text-sm text-red-700">{progress.failedNames.join(", ")}</p>
+                <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto thin-scrollbar">
+                  {progress.failedItems.map((item, idx) => (
+                    <li key={idx} className="rounded-md bg-white px-3 py-2 text-xs leading-relaxed">
+                      <span className="font-semibold text-(--color-ink)">{item.name}</span>
+                      <span className="mt-0.5 block text-red-600">{item.reason}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

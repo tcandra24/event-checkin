@@ -68,7 +68,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
           <p className="font-display text-sm font-semibold leading-tight">{process.env.NEXT_PUBLIC_EVENT_NAME || "Event Check-in"}</p>
         </div>
         <button onClick={handleLogout} className="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Keluar">
-          <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
+          <LogOut className="h-4.5 w-4.5" strokeWidth={2} />
         </button>
       </header>
 

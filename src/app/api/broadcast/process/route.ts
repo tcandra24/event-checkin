@@ -44,7 +44,9 @@ function renderMessage(template: string, p: Participant, appUrl: string): string
   return template.replaceAll("{nama}", p.name).replaceAll("{kursi}", p.seat_number).replaceAll("{keluarga}", p.family_group).replaceAll("{qty}", String(p.qty)).replaceAll("{kode}", p.code).replaceAll("{link_rsvp}", `${appUrl}/rsvp/${p.code}`);
 }
 
-async function sendOne(token: string, phone: string, message: string, imageBuffer?: Buffer): Promise<{ ok: boolean; reason?: string }> {
+async function sendOne(token: string, phone: string, message: string, participantLabel: string, imageBuffer?: Buffer): Promise<{ ok: boolean; reason?: string }> {
+  const logPrefix = `[broadcast] -> ${participantLabel} (${phone})`;
+
   try {
     if (imageBuffer) {
       const form = new FormData();
@@ -53,18 +55,33 @@ async function sendOne(token: string, phone: string, message: string, imageBuffe
       const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
       form.append("file", blob, "tiket.png");
 
+      console.log(`${logPrefix}: mengirim dengan lampiran gambar tiket...`);
       const res = await fetch(FONNTE_ENDPOINT, {
         method: "POST",
         headers: { Authorization: token },
         body: form,
       });
-      const json = await res.json().catch(() => ({}));
+      const rawText = await res.text();
+      const json = (() => {
+        try {
+          return JSON.parse(rawText);
+        } catch {
+          return null;
+        }
+      })();
+
+      console.log(`${logPrefix}: HTTP ${res.status}, response Fonnte: ${rawText.slice(0, 500)}`);
+
       if (!res.ok || json?.status === false) {
-        return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
+        const reason = json?.reason || `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
+        console.error(`${logPrefix}: GAGAL — ${reason}`);
+        return { ok: false, reason };
       }
+      console.log(`${logPrefix}: berhasil terkirim.`);
       return { ok: true };
     }
 
+    console.log(`${logPrefix}: mengirim pesan teks...`);
     const res = await fetch(FONNTE_ENDPOINT, {
       method: "POST",
       headers: {
@@ -73,13 +90,28 @@ async function sendOne(token: string, phone: string, message: string, imageBuffe
       },
       body: new URLSearchParams({ target: phone, message }),
     });
-    const json = await res.json().catch(() => ({}));
+    const rawText = await res.text();
+    const json = (() => {
+      try {
+        return JSON.parse(rawText);
+      } catch {
+        return null;
+      }
+    })();
+
+    console.log(`${logPrefix}: HTTP ${res.status}, response Fonnte: ${rawText.slice(0, 500)}`);
+
     if (!res.ok || json?.status === false) {
-      return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
+      const reason = json?.reason || `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
+      console.error(`${logPrefix}: GAGAL — ${reason}`);
+      return { ok: false, reason };
     }
+    console.log(`${logPrefix}: berhasil terkirim.`);
     return { ok: true };
   } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : "Gagal mengirim" };
+    const reason = e instanceof Error ? e.message : "Gagal mengirim (exception tidak dikenal)";
+    console.error(`${logPrefix}: EXCEPTION — ${reason}`, e);
+    return { ok: false, reason };
   }
 }
 
@@ -112,9 +144,12 @@ export async function POST(req: NextRequest) {
   const jobId = body?.jobId as string | undefined;
   const secret = body?.secret as string | undefined;
 
+  console.log(`[broadcast] Menerima permintaan proses untuk job ${jobId ?? "(tidak ada jobId)"}`);
+
   // Proteksi sederhana supaya endpoint ini tidak bisa dipanggil sembarang
   // orang dari luar untuk memicu pengiriman pesan tanpa otorisasi.
   if (!process.env.BROADCAST_PROCESS_SECRET || secret !== process.env.BROADCAST_PROCESS_SECRET) {
+    console.error("[broadcast] Permintaan ditolak: secret tidak cocok atau tidak diatur.");
     return NextResponse.json({ error: "Tidak diizinkan." }, { status: 401 });
   }
 
@@ -127,6 +162,7 @@ export async function POST(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
 
   if (!token) {
+    console.error("[broadcast] FONNTE_TOKEN tidak diatur — job ditandai gagal.");
     await supabase.from("broadcast_jobs").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", jobId);
     return NextResponse.json({ error: "FONNTE_TOKEN tidak diatur." }, { status: 500 });
   }
@@ -134,8 +170,11 @@ export async function POST(req: NextRequest) {
   const { data: job } = await supabase.from("broadcast_jobs").select("*").eq("id", jobId).single();
 
   if (!job) {
+    console.error(`[broadcast] Job ${jobId} tidak ditemukan di database.`);
     return NextResponse.json({ error: "Job tidak ditemukan." }, { status: 404 });
   }
+
+  console.log(`[broadcast] Job ${jobId} status saat ini: ${job.status} (total ${job.total_recipients} penerima)`);
 
   if (job.status === "completed" || job.status === "cancelled") {
     return NextResponse.json({ message: "Job sudah selesai/dibatalkan." });
@@ -161,6 +200,7 @@ export async function POST(req: NextRequest) {
   const { data: pendingItems } = await supabase.from("broadcast_job_items").select("id, participant_id, participants(*)").eq("job_id", jobId).eq("status", "pending").limit(job.batch_size);
 
   if (!pendingItems || pendingItems.length === 0) {
+    console.log(`[broadcast] Job ${jobId}: tidak ada item pending lagi, menandai selesai.`);
     // Tidak ada lagi item pending → job selesai. Hitung ulang ringkasan akhir.
     const { count: successCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "sent");
 
@@ -186,11 +226,14 @@ export async function POST(req: NextRequest) {
       total_failed: failedCount ?? 0,
     });
 
+    console.log(`[broadcast] Job ${jobId} SELESAI. Berhasil: ${successCount ?? 0}, Gagal: ${failedCount ?? 0}`);
+
     return NextResponse.json({ message: "Job selesai." });
   }
 
   // Proses batch ini SATU PER SATU dengan jeda acak antar pesan —
   // inilah bagian yang menghindarkan nomor WA dari deteksi spam.
+  console.log(`[broadcast] Job ${jobId}: memproses batch berisi ${pendingItems.length} item...`);
   for (const item of pendingItems) {
     // @ts-expect-error -- relasi nested dari Supabase join (foreign key many-to-one ke participants)
     const participant = item.participants as Participant;
@@ -214,12 +257,13 @@ export async function POST(req: NextRequest) {
           eventAddress: settings?.event_address || "",
           backgroundUrl: settings?.ticket_background_url || null,
         });
-      } catch {
+      } catch (e) {
+        console.error(`[broadcast] Gagal generate tiket untuk ${participant.name} (${participant.code}):`, e);
         imageBuffer = undefined;
       }
     }
 
-    const result = await sendOne(token, participant.phone, message, imageBuffer);
+    const result = await sendOne(token, participant.phone, message, `${participant.name} [${participant.code}]`, imageBuffer);
 
     if (result.ok) {
       await supabase.from("broadcast_job_items").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", item.id);
@@ -246,6 +290,7 @@ export async function POST(req: NextRequest) {
     // justru lebih mudah dikenali sebagai bot dibanding jeda manusiawi
     // yang bervariasi.
     const delay = randomDelay(job.delay_min_ms, job.delay_max_ms);
+    console.log(`[broadcast] Menunggu ${delay}ms sebelum pesan berikutnya...`);
     await new Promise((r) => setTimeout(r, delay));
   }
 
@@ -254,6 +299,7 @@ export async function POST(req: NextRequest) {
   const { count: remainingCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "pending");
 
   if (remainingCount && remainingCount > 0) {
+    console.log(`[broadcast] Job ${jobId}: batch selesai, masih ada ${remainingCount} item pending. Memicu batch berikutnya...`);
     waitUntil(triggerNextBatch(appUrl, jobId, secret));
     return NextResponse.json({ message: "Batch selesai, melanjutkan batch berikutnya." });
   }
@@ -281,6 +327,8 @@ export async function POST(req: NextRequest) {
     total_success: successCount ?? 0,
     total_failed: failedCount ?? 0,
   });
+
+  console.log(`[broadcast] Job ${jobId} SELESAI (tanpa batch lanjutan). Berhasil: ${successCount ?? 0}, Gagal: ${failedCount ?? 0}`);
 
   return NextResponse.json({ message: "Job selesai." });
 }

@@ -14,6 +14,11 @@ export interface BroadcastResult {
 // "all" / "belum_hadir" / "hadir", atau nilai family_group spesifik (string bebas)
 export type BroadcastFilter = string;
 
+export interface BroadcastFailedItem {
+  name: string;
+  reason: string;
+}
+
 export interface BroadcastJobStatusResult {
   success: boolean;
   error?: string;
@@ -22,7 +27,7 @@ export interface BroadcastJobStatusResult {
   totalSuccess?: number;
   totalFailed?: number;
   totalPending?: number;
-  failedNames?: string[];
+  failedItems?: BroadcastFailedItem[];
 }
 
 /**
@@ -153,11 +158,14 @@ export async function getBroadcastJobStatus(jobId: string): Promise<BroadcastJob
   const totalSuccess = items?.filter((i) => i.status === "sent").length ?? 0;
   const totalFailed = items?.filter((i) => i.status === "failed").length ?? 0;
   const totalPending = items?.filter((i) => i.status === "pending").length ?? 0;
-  const failedNames =
+  const failedItems: BroadcastFailedItem[] =
     items
       ?.filter((i) => i.status === "failed")
-      // @ts-expect-error -- relasi nested dari Supabase join, bentuknya objek tunggal saat foreign key many-to-one
-      .map((i) => i.participants?.name ?? "Tidak diketahui") ?? [];
+      .map((i) => ({
+        // @ts-expect-error -- relasi nested dari Supabase join, bentuknya objek tunggal saat foreign key many-to-one
+        name: i.participants?.name ?? "Tidak diketahui",
+        reason: i.error_message ?? "Alasan tidak tercatat",
+      })) ?? [];
 
   return {
     success: true,
@@ -166,6 +174,6 @@ export async function getBroadcastJobStatus(jobId: string): Promise<BroadcastJob
     totalSuccess,
     totalFailed,
     totalPending,
-    failedNames,
+    failedItems,
   };
 }
