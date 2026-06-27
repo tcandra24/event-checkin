@@ -2,70 +2,37 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { generateTicketCard } from "@/lib/ticketCard";
-import type { Participant } from "@/lib/types";
 
 export interface BroadcastResult {
   success: boolean;
   error?: string;
+  jobId?: string;
   totalRecipients?: number;
-  totalSuccess?: number;
-  totalFailed?: number;
-  failedNames?: string[];
 }
 
 // "all" / "belum_hadir" / "hadir", atau nilai family_group spesifik (string bebas)
 export type BroadcastFilter = string;
 
-const FONNTE_ENDPOINT_TEXT = "https://api.fonnte.com/send";
+export interface BroadcastJobStatusResult {
+  success: boolean;
+  error?: string;
+  status?: string;
+  totalRecipients?: number;
+  totalSuccess?: number;
+  totalFailed?: number;
+  totalPending?: number;
+  failedNames?: string[];
+}
 
 /**
- * Mengganti placeholder pada template pesan dengan data masing-masing peserta.
- * Placeholder yang didukung: {nama}, {kursi}, {keluarga}, {qty}, {kode}, {link_rsvp}
+ * Membuat job broadcast baru dan mendaftarkan seluruh penerima ke dalam
+ * antrian (broadcast_job_items), TANPA langsung mengirim apa pun di sini.
+ *
+ * Sengaja dibuat secepat mungkin (cuma insert ke database) supaya tidak
+ * kena timeout Server Action — pengiriman pesan yang sesungguhnya (dengan
+ * jeda antar pesan) dilakukan terpisah oleh API Route /api/broadcast/process,
+ * yang memproses job ini bertahap per-batch di background.
  */
-function renderMessage(template: string, p: Participant, appUrl: string): string {
-  return template.replaceAll("{nama}", p.name).replaceAll("{kursi}", p.seat_number).replaceAll("{keluarga}", p.family_group).replaceAll("{qty}", String(p.qty)).replaceAll("{kode}", p.code).replaceAll("{link_rsvp}", `${appUrl}/rsvp/${p.code}`);
-}
-
-async function sendOne(token: string, phone: string, message: string, imageBuffer?: Buffer): Promise<{ ok: boolean; reason?: string }> {
-  try {
-    if (imageBuffer) {
-      const form = new FormData();
-      form.append("target", phone);
-      form.append("message", message);
-      const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
-      form.append("file", blob, "tiket.png");
-
-      const res = await fetch(FONNTE_ENDPOINT_TEXT, {
-        method: "POST",
-        headers: { Authorization: token },
-        body: form,
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.status === false) {
-        return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
-      }
-      return { ok: true };
-    }
-
-    const res = await fetch(FONNTE_ENDPOINT_TEXT, {
-      method: "POST",
-      headers: {
-        Authorization: token,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ target: phone, message }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || json?.status === false) {
-      return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : "Gagal mengirim" };
-  }
-}
-
 export async function sendBroadcast(input: { message: string; filter: BroadcastFilter; includeQr: boolean }): Promise<BroadcastResult> {
   const token = process.env.FONNTE_TOKEN;
   if (!token) {
@@ -85,9 +52,7 @@ export async function sendBroadcast(input: { message: string; filter: BroadcastF
     return { success: false, error: "Sesi habis, silakan login kembali." };
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
-
-  let query = supabase.from("participants").select("*");
+  let query = supabase.from("participants").select("id");
   if (input.filter === "belum_hadir" || input.filter === "hadir") {
     query = query.eq("status", input.filter);
   } else if (input.filter !== "all") {
@@ -95,82 +60,106 @@ export async function sendBroadcast(input: { message: string; filter: BroadcastF
     query = query.eq("family_group", input.filter);
   }
 
-  const { data: participants, error } = await query;
-  if (error) {
-    return { success: false, error: error.message };
+  const { data: participants, error: fetchError } = await query;
+  if (fetchError) {
+    return { success: false, error: fetchError.message };
   }
   if (!participants || participants.length === 0) {
     return { success: false, error: "Tidak ada peserta yang cocok dengan filter ini." };
   }
 
-  let settings: { event_name: string; event_address: string; ticket_background_url: string | null } | null = null;
-  if (input.includeQr) {
-    const { data } = await supabase.from("event_settings").select("event_name, event_address, ticket_background_url").eq("id", 1).maybeSingle();
-    settings = data;
+  // 1. Buat header job
+  const { data: job, error: jobError } = await supabase
+    .from("broadcast_jobs")
+    .insert({
+      created_by: userData.user.id,
+      message_template: input.message,
+      target_filter: input.filter,
+      include_qr: input.includeQr,
+      total_recipients: participants.length,
+      status: "queued",
+    })
+    .select("id")
+    .single();
+
+  if (jobError || !job) {
+    return { success: false, error: jobError?.message ?? "Gagal membuat job broadcast." };
   }
 
-  let totalSuccess = 0;
-  let totalFailed = 0;
-  const failedNames: string[] = [];
+  // 2. Daftarkan setiap peserta sebagai item dalam job (semua "pending")
+  const items = participants.map((p) => ({
+    job_id: job.id,
+    participant_id: p.id,
+    status: "pending" as const,
+  }));
 
-  // Kirim berurutan dengan jeda singkat untuk menghindari rate-limit Fonnte.
-  for (const p of participants as Participant[]) {
-    const message = renderMessage(input.message, p, appUrl);
+  const { error: itemsError } = await supabase.from("broadcast_job_items").insert(items);
 
-    let imageBuffer: Buffer | undefined;
-    if (input.includeQr) {
-      try {
-        imageBuffer = await generateTicketCard({
-          participantName: p.name,
-          code: p.code,
-          qty: p.qty,
-          rsvp_qty_response: p.rsvp_qty_response,
-          eventName: settings?.event_name || "Nama Acara Anda",
-          eventAddress: settings?.event_address || "",
-          backgroundUrl: settings?.ticket_background_url || null,
-        });
-      } catch {
-        imageBuffer = undefined;
-      }
-    }
-
-    const result = await sendOne(token, p.phone, message, imageBuffer);
-
-    if (result.ok) {
-      totalSuccess++;
-      await supabase.from("participants").update({ wa_sent_at: new Date().toISOString(), wa_status: "sent" }).eq("id", p.id);
-    } else {
-      totalFailed++;
-      failedNames.push(p.name);
-      await supabase
-        .from("participants")
-        .update({
-          wa_sent_at: new Date().toISOString(),
-          wa_status: `failed: ${result.reason ?? "unknown"}`,
-        })
-        .eq("id", p.id);
-    }
-
-    // jeda kecil antar pengiriman
-    await new Promise((r) => setTimeout(r, 350));
+  if (itemsError) {
+    return { success: false, error: itemsError.message };
   }
 
-  await supabase.from("broadcast_logs").insert({
-    sent_by: userData.user.id,
-    message: input.message,
-    target_filter: input.filter,
-    total_recipients: participants.length,
-    total_success: totalSuccess,
-    total_failed: totalFailed,
-  });
+  // Picu pemrosesan batch pertama. Sengaja TIDAK di-await — supaya Server
+  // Action ini langsung return ke UI tanpa menunggu proses pengiriman
+  // (yang bisa berjalan belasan menit) selesai dulu.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
+  const secret = process.env.BROADCAST_PROCESS_SECRET;
+
+  if (secret) {
+    fetch(`${appUrl}/api/broadcast/process`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: job.id, secret }),
+    }).catch(() => {
+      // Diabaikan — jika trigger awal ini gagal, job akan tetap berstatus
+      // "queued" dan perlu dipicu ulang manual (lihat catatan di README).
+    });
+  }
 
   revalidatePath("/peserta");
 
   return {
     success: true,
+    jobId: job.id,
     totalRecipients: participants.length,
+  };
+}
+
+/**
+ * Dipanggil berulang dari UI (polling) untuk menampilkan progres job yang
+ * sedang berjalan di background.
+ */
+export async function getBroadcastJobStatus(jobId: string): Promise<BroadcastJobStatusResult> {
+  const supabase = await createClient();
+
+  const { data: job, error: jobError } = await supabase.from("broadcast_jobs").select("*").eq("id", jobId).single();
+
+  if (jobError || !job) {
+    return { success: false, error: "Job broadcast tidak ditemukan." };
+  }
+
+  const { data: items, error: itemsError } = await supabase.from("broadcast_job_items").select("status, error_message, participant_id, participants(name)").eq("job_id", jobId);
+
+  if (itemsError) {
+    return { success: false, error: itemsError.message };
+  }
+
+  const totalSuccess = items?.filter((i) => i.status === "sent").length ?? 0;
+  const totalFailed = items?.filter((i) => i.status === "failed").length ?? 0;
+  const totalPending = items?.filter((i) => i.status === "pending").length ?? 0;
+  const failedNames =
+    items
+      ?.filter((i) => i.status === "failed")
+      // @ts-expect-error -- relasi nested dari Supabase join, bentuknya objek tunggal saat foreign key many-to-one
+      .map((i) => i.participants?.name ?? "Tidak diketahui") ?? [];
+
+  return {
+    success: true,
+    status: job.status,
+    totalRecipients: job.total_recipients,
     totalSuccess,
     totalFailed,
+    totalPending,
     failedNames,
   };
 }

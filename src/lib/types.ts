@@ -1,9 +1,5 @@
 export type ParticipantStatus = "belum_hadir" | "hadir";
-export type RsvpStatus =
-  | "belum_konfirmasi"
-  | "menunggu_approval"
-  | "dikonfirmasi_hadir"
-  | "dikonfirmasi_tidak_hadir";
+export type RsvpStatus = "belum_konfirmasi" | "menunggu_approval" | "dikonfirmasi_hadir" | "dikonfirmasi_tidak_hadir";
 
 export interface Participant {
   id: string;
@@ -53,4 +49,36 @@ export interface EventSettings {
   ticket_background_url: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type BroadcastJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
+
+export interface BroadcastJob {
+  id: string;
+  created_by: string | null;
+  message_template: string;
+  target_filter: string;
+  include_qr: boolean;
+  status: BroadcastJobStatus;
+  total_recipients: number;
+  total_success: number;
+  total_failed: number;
+  delay_min_ms: number;
+  delay_max_ms: number;
+  batch_size: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export type BroadcastJobItemStatus = "pending" | "sent" | "failed";
+
+export interface BroadcastJobItem {
+  id: string;
+  job_id: string;
+  participant_id: string;
+  status: BroadcastJobItemStatus;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string;
 }

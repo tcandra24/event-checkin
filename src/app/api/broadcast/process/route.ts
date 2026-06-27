@@ -1,0 +1,264 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { generateTicketCard } from "@/lib/ticketCard";
+import type { Participant } from "@/lib/types";
+
+// Endpoint ini dipanggil oleh Server Action sendBroadcast (sekali, untuk
+// memulai job), dan oleh dirinya sendiri secara self-chaining (sampai
+// semua item dalam job selesai diproses). Karena dipanggil sebagai HTTP
+// request terpisah dari request awal pengguna, prosesnya TIDAK terikat
+// pada batas waktu Server Action — masing-masing panggilan cukup memproses
+// 1 batch kecil saja, lalu memicu panggilan berikutnya.
+//
+// Route ini sengaja dibuat sebagai Route Handler (bukan Server Action)
+// karena perlu dipanggil dari server itu sendiri (fetch ke URL publiknya),
+// yang lebih natural lewat HTTP endpoint biasa.
+
+export const maxDuration = 60; // detik, batas waktu maksimal 1 kali pemanggilan batch
+
+const FONNTE_ENDPOINT = "https://api.fonnte.com/send";
+
+// Pakai service role key di sini (BUKAN anon key) karena route ini dipicu
+// oleh server-ke-server (bukan dari sesi browser pengguna yang login),
+// sehingga tidak ada cookie sesi yang bisa dipakai createClient() biasa.
+function createServiceClient() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+}
+
+function randomDelay(minMs: number, maxMs: number): number {
+  return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
+function renderMessage(template: string, p: Participant, appUrl: string): string {
+  return template.replaceAll("{nama}", p.name).replaceAll("{kursi}", p.seat_number).replaceAll("{keluarga}", p.family_group).replaceAll("{qty}", String(p.qty)).replaceAll("{kode}", p.code).replaceAll("{link_rsvp}", `${appUrl}/rsvp/${p.code}`);
+}
+
+async function sendOne(token: string, phone: string, message: string, imageBuffer?: Buffer): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    if (imageBuffer) {
+      const form = new FormData();
+      form.append("target", phone);
+      form.append("message", message);
+      const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
+      form.append("file", blob, "tiket.png");
+
+      const res = await fetch(FONNTE_ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: token },
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.status === false) {
+        return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    }
+
+    const res = await fetch(FONNTE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ target: phone, message }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.status === false) {
+      return { ok: false, reason: json?.reason || `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "Gagal mengirim" };
+  }
+}
+
+/** Memicu panggilan batch berikutnya tanpa menunggu hasilnya (fire and forget). */
+function triggerNextBatch(appUrl: string, jobId: string, secret: string) {
+  fetch(`${appUrl}/api/broadcast/process`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobId, secret }),
+  }).catch(() => {
+    // Diabaikan: kalau trigger ini gagal terkirim, job akan macet di status
+    // "processing". Untuk produksi, pertimbangkan menambah cron pengaman
+    // terpisah yang memeriksa job macet dan memicu ulang.
+  });
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  const jobId = body?.jobId as string | undefined;
+  const secret = body?.secret as string | undefined;
+
+  // Proteksi sederhana supaya endpoint ini tidak bisa dipanggil sembarang
+  // orang dari luar untuk memicu pengiriman pesan tanpa otorisasi.
+  if (!process.env.BROADCAST_PROCESS_SECRET || secret !== process.env.BROADCAST_PROCESS_SECRET) {
+    return NextResponse.json({ error: "Tidak diizinkan." }, { status: 401 });
+  }
+
+  if (!jobId) {
+    return NextResponse.json({ error: "jobId wajib diisi." }, { status: 400 });
+  }
+
+  const supabase = createServiceClient();
+  const token = process.env.FONNTE_TOKEN;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
+
+  if (!token) {
+    await supabase.from("broadcast_jobs").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", jobId);
+    return NextResponse.json({ error: "FONNTE_TOKEN tidak diatur." }, { status: 500 });
+  }
+
+  const { data: job } = await supabase.from("broadcast_jobs").select("*").eq("id", jobId).single();
+
+  if (!job) {
+    return NextResponse.json({ error: "Job tidak ditemukan." }, { status: 404 });
+  }
+
+  if (job.status === "completed" || job.status === "cancelled") {
+    return NextResponse.json({ message: "Job sudah selesai/dibatalkan." });
+  }
+
+  // Tandai job mulai diproses (hanya berefek pada panggilan pertama)
+  if (job.status === "queued") {
+    await supabase.from("broadcast_jobs").update({ status: "processing", started_at: new Date().toISOString() }).eq("id", jobId);
+  }
+
+  // Ambil event_settings sekali per batch, hanya jika job ini perlu kirim QR
+  let settings: {
+    event_name: string;
+    event_address: string;
+    ticket_background_url: string | null;
+  } | null = null;
+  if (job.include_qr) {
+    const { data } = await supabase.from("event_settings").select("event_name, event_address, ticket_background_url").eq("id", 1).maybeSingle();
+    settings = data;
+  }
+
+  // Ambil 1 batch item yang masih "pending"
+  const { data: pendingItems } = await supabase.from("broadcast_job_items").select("id, participant_id, participants(*)").eq("job_id", jobId).eq("status", "pending").limit(job.batch_size);
+
+  if (!pendingItems || pendingItems.length === 0) {
+    // Tidak ada lagi item pending → job selesai. Hitung ulang ringkasan akhir.
+    const { count: successCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "sent");
+
+    const { count: failedCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "failed");
+
+    await supabase
+      .from("broadcast_jobs")
+      .update({
+        status: "completed",
+        total_success: successCount ?? 0,
+        total_failed: failedCount ?? 0,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+
+    // Catat juga ke broadcast_logs (riwayat ringkas, konsisten dengan versi lama)
+    await supabase.from("broadcast_logs").insert({
+      sent_by: job.created_by,
+      message: job.message_template,
+      target_filter: job.target_filter,
+      total_recipients: job.total_recipients,
+      total_success: successCount ?? 0,
+      total_failed: failedCount ?? 0,
+    });
+
+    return NextResponse.json({ message: "Job selesai." });
+  }
+
+  // Proses batch ini SATU PER SATU dengan jeda acak antar pesan —
+  // inilah bagian yang menghindarkan nomor WA dari deteksi spam.
+  for (const item of pendingItems) {
+    // @ts-expect-error -- relasi nested dari Supabase join (foreign key many-to-one ke participants)
+    const participant = item.participants as Participant;
+
+    if (!participant) {
+      await supabase.from("broadcast_job_items").update({ status: "failed", error_message: "Data peserta tidak ditemukan" }).eq("id", item.id);
+      continue;
+    }
+
+    const message = renderMessage(job.message_template, participant, appUrl);
+
+    let imageBuffer: Buffer | undefined;
+    if (job.include_qr) {
+      try {
+        imageBuffer = await generateTicketCard({
+          participantName: participant.name,
+          code: participant.code,
+          qty: participant.qty,
+          rsvp_qty_response: participant.rsvp_qty_response,
+          eventName: settings?.event_name || "Nama Acara Anda",
+          eventAddress: settings?.event_address || "",
+          backgroundUrl: settings?.ticket_background_url || null,
+        });
+      } catch {
+        imageBuffer = undefined;
+      }
+    }
+
+    const result = await sendOne(token, participant.phone, message, imageBuffer);
+
+    if (result.ok) {
+      await supabase.from("broadcast_job_items").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", item.id);
+      await supabase.from("participants").update({ wa_sent_at: new Date().toISOString(), wa_status: "sent" }).eq("id", participant.id);
+    } else {
+      await supabase
+        .from("broadcast_job_items")
+        .update({
+          status: "failed",
+          error_message: result.reason ?? "unknown",
+          sent_at: new Date().toISOString(),
+        })
+        .eq("id", item.id);
+      await supabase
+        .from("participants")
+        .update({
+          wa_sent_at: new Date().toISOString(),
+          wa_status: `failed: ${result.reason ?? "unknown"}`,
+        })
+        .eq("id", participant.id);
+    }
+
+    // Jeda ACAK antar pesan (bukan tetap) — pola jeda yang persis sama
+    // justru lebih mudah dikenali sebagai bot dibanding jeda manusiawi
+    // yang bervariasi.
+    const delay = randomDelay(job.delay_min_ms, job.delay_max_ms);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+
+  // Cek apakah masih ada item pending lain setelah batch ini —
+  // jika ya, picu panggilan berikutnya (self-chaining).
+  const { count: remainingCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "pending");
+
+  if (remainingCount && remainingCount > 0) {
+    triggerNextBatch(appUrl, jobId, secret);
+    return NextResponse.json({ message: "Batch selesai, melanjutkan batch berikutnya." });
+  }
+
+  // Tidak ada sisa item pending → tandai selesai (sama seperti blok di atas)
+  const { count: successCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "sent");
+
+  const { count: failedCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "failed");
+
+  await supabase
+    .from("broadcast_jobs")
+    .update({
+      status: "completed",
+      total_success: successCount ?? 0,
+      total_failed: failedCount ?? 0,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
+
+  await supabase.from("broadcast_logs").insert({
+    sent_by: job.created_by,
+    message: job.message_template,
+    target_filter: job.target_filter,
+    total_recipients: job.total_recipients,
+    total_success: successCount ?? 0,
+    total_failed: failedCount ?? 0,
+  });
+
+  return NextResponse.json({ message: "Job selesai." });
+}

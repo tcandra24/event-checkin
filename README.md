@@ -118,6 +118,8 @@ cp .env.local.example .env.local
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=isi-dengan-anon-public-key
+SUPABASE_SERVICE_ROLE_KEY=isi-dengan-service-role-key
+BROADCAST_PROCESS_SECRET=isi-dengan-string-acak-panjang
 FONNTE_TOKEN=isi-dengan-token-fonnte
 NEXT_PUBLIC_EVENT_NAME="Event Check-in"
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -125,9 +127,19 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 > **Penting**: `NEXT_PUBLIC_APP_URL` harus diisi dengan domain produksi yang
 > benar setelah deploy (misal `https://checkin.acara-kamu.com`), karena nilai
-> ini dipakai untuk membangun tautan RSVP (`{link_rsvp}`) yang dikirim lewat
-> WhatsApp. Jika salah/masih `localhost`, peserta tidak akan bisa membuka
-> tautan tersebut dari HP mereka.
+> ini dipakai untuk membangun tautan RSVP (`{link_rsvp}`) dan untuk memicu
+> proses broadcast di background (lihat bagian "Cara kerja broadcast WhatsapApp"
+> di bawah). Jika salah/masih `localhost`, peserta tidak akan bisa membuka
+> tautan tersebut, dan broadcast tidak akan berjalan di produksi.
+>
+> `SUPABASE_SERVICE_ROLE_KEY` ambil dari **Project Settings → API → service_role
+> key** (klik "Reveal" karena defaultnya tersembunyi). **Jangan pernah** diberi
+> prefix `NEXT_PUBLIC_` atau diekspos ke kode sisi klien — key ini punya akses
+> penuh ke seluruh database tanpa terikat Row Level Security.
+>
+> `BROADCAST_PROCESS_SECRET` adalah string rahasia buatan sendiri (boleh apa
+> saja, semakin panjang & acak semakin aman). Contoh generate cepat:
+> `openssl rand -hex 32` di terminal.
 >
 > Nama acara, alamat, dan gambar latar tiket **tidak** diatur lewat
 > environment variable — semua diatur lewat halaman **Pengaturan Tiket**
@@ -175,28 +187,28 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 
 ## Struktur halaman
 
-| Route            | Login? | Keterangan                                                   |
-|------------------|--------|-----------------------------------------------------------------|
-| `/login`         | -      | Halaman login panitia                                           |
-| `/peserta`       | Wajib  | Input/import peserta, review RSVP, kirim broadcast WhatsApp      |
-| `/laporan`       | Wajib  | Statistik & tabel kehadiran + status RSVP, ekspor CSV            |
-| `/scan`          | Wajib  | Scan QR code (kamera/alat scanner/manual) untuk check-in         |
-| `/pengaturan`    | Wajib  | Atur nama acara, alamat, dan gambar latar tiket                  |
-| `/rsvp/[code]`   | Publik | Halaman bagi peserta mengonfirmasi kehadiran, tanpa login        |
+| Route          | Login? | Keterangan                                                  |
+| -------------- | ------ | ----------------------------------------------------------- |
+| `/login`       | -      | Halaman login panitia                                       |
+| `/peserta`     | Wajib  | Input/import peserta, review RSVP, kirim broadcast WhatsApp |
+| `/laporan`     | Wajib  | Statistik & tabel kehadiran + status RSVP, ekspor CSV       |
+| `/scan`        | Wajib  | Scan QR code (kamera/alat scanner/manual) untuk check-in    |
+| `/pengaturan`  | Wajib  | Atur nama acara, alamat, dan gambar latar tiket             |
+| `/rsvp/[code]` | Publik | Halaman bagi peserta mengonfirmasi kehadiran, tanpa login   |
 
 ## Field data peserta
 
-| Field                | Keterangan                                                          |
-|----------------------|------------------------------------------------------------------------|
-| `name`               | Nama tamu/peserta                                                    |
-| `phone`              | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                 |
-| `seat_number`        | Nomor kursi — teks bebas, juga dipakai untuk pencarian/grouping       |
-| `family_group`       | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast |
-| `qty`                | Jumlah pax maksimal yang berlaku untuk 1 QR code                      |
-| `code`               | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`           |
-| `status`             | Status kehadiran fisik: `belum_hadir` atau `hadir`                    |
-| `rsvp_status`        | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir` |
-| `rsvp_qty_response`  | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)           |
+| Field               | Keterangan                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `name`              | Nama tamu/peserta                                                                              |
+| `phone`             | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                                          |
+| `seat_number`       | Nomor kursi — teks bebas, juga dipakai untuk pencarian/grouping                                |
+| `family_group`      | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast                         |
+| `qty`               | Jumlah pax maksimal yang berlaku untuk 1 QR code                                               |
+| `code`              | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`                                    |
+| `status`            | Status kehadiran fisik: `belum_hadir` atau `hadir`                                             |
+| `rsvp_status`       | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir` |
+| `rsvp_qty_response` | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)                                   |
 
 ## Import peserta dari Excel
 
@@ -228,6 +240,7 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 
 Peserta membuka tautan tanpa perlu login atau install apa pun, melihat nama
 mereka dan kapasitas maksimal tiket, lalu memilih:
+
 - **Ya, saya akan hadir** → diminta mengisi jumlah orang yang datang
   (1 sampai maksimal qty tiket), lalu submit.
 - **Tidak dapat hadir** → langsung tercatat sebagai tidak hadir.
@@ -288,10 +301,86 @@ Placeholder pesan yang didukung di kedua mode: `{nama}`, `{kursi}`,
 status kehadiran atau per keluarga/rombongan (daftar keluarga otomatis
 muncul sesuai data yang sudah diinput).
 
-> Fonnte memiliki rate limit; aplikasi ini mengirim pesan secara berurutan
-> dengan jeda singkat antar pesan. Mode Tiket QR final butuh waktu sedikit
-> lebih lama karena setiap gambar di-render ulang saat broadcast — biarkan
-> halaman tetap terbuka sampai proses selesai.
+### Cara kerja broadcast WhatsApp di balik layar
+
+Untuk menghindari nomor WhatsApp terkena deteksi spam/banned saat mengirim ke
+banyak penerima (puluhan hingga ratusan), broadcast **tidak** dikirim sekaligus
+dalam satu proses. Saat tombol "Kirim broadcast" diklik:
+
+1. Sebuah **job** dibuat (tabel `broadcast_jobs`) beserta daftar seluruh
+   penerima sebagai **item antrian** (tabel `broadcast_job_items`), semuanya
+   berstatus `pending`. Langkah ini instan.
+2. Endpoint `/api/broadcast/process` dipicu untuk memproses **satu batch
+   kecil** (default 10 penerima) dari job tersebut — setiap pesan dikirim
+   satu per satu dengan **jeda acak 3–8 detik** (bukan jeda tetap, supaya
+   pola pengiriman terlihat manusiawi, bukan seperti bot).
+3. Setelah satu batch selesai, endpoint itu otomatis memicu dirinya sendiri
+   lagi untuk batch berikutnya (self-chaining) — berulang sampai seluruh
+   item dalam job berstatus `sent` atau `failed`.
+4. UI menampilkan progres secara real-time lewat polling setiap beberapa
+   detik, dan **tetap berjalan di background walau halaman ditutup**, karena
+   prosesnya berjalan di server (endpoint API), bukan di browser.
+
+Untuk 200 penerima dengan jeda rata-rata ~5 detik, perkiraan waktu total
+sekitar 15–20 menit — ini wajar dan disengaja demi keamanan nomor WhatsApp,
+bukan bug performa.
+
+Parameter jeda (`delay_min_ms`, `delay_max_ms`) dan ukuran batch
+(`batch_size`) tersimpan per job di tabel `broadcast_jobs` dan bisa
+disesuaikan langsung lewat SQL Editor Supabase jika perlu (misal dipersempit
+untuk volume sangat besar), tanpa perlu mengubah kode atau redeploy.
+
+> **Keandalan pengaman (Vercel Cron Job)**: mekanisme self-chaining
+> mengandalkan kemampuan server memanggil dirinya sendiri lewat HTTP
+> request. Jika satu panggilan gagal terkirim (jaringan terputus sesaat,
+> dsb), job bisa macet di status `processing` dengan sisa item `pending`
+> yang tidak lanjut terproses. Sebagai pengaman, project ini sudah
+> menyertakan **Vercel Cron Job** (`vercel.json` + endpoint
+> `/api/broadcast/cron`) yang berjalan setiap 5 menit untuk memeriksa job
+> aktif yang tidak ada aktivitas pengiriman selama 5 menit terakhir, lalu
+> otomatis memicu ulang `/api/broadcast/process` untuk job tersebut. Lihat
+> bagian [Setup Vercel Cron Job](#setup-vercel-cron-job) di bawah.
+
+> Mode Tiket QR final butuh waktu sedikit lebih lama per pesan dibanding mode
+> RSVP, karena setiap gambar tiket di-render ulang saat broadcast berjalan.
+
+## Setup Vercel Cron Job
+
+Fitur ini berjalan otomatis setelah deploy ke Vercel, **tidak perlu setup
+manual tambahan di dashboard Vercel** — konfigurasinya sudah ada di
+`vercel.json` pada root project:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/broadcast/cron",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+```
+
+Yang perlu dipastikan:
+
+1. **Tambahkan environment variable `CRON_SECRET`** di Vercel (Project
+   Settings → Environment Variables) — isi dengan string acak (boleh
+   generate lewat `openssl rand -hex 32`). Vercel otomatis mengirim nilai
+   ini sebagai header `Authorization: Bearer <CRON_SECRET>` setiap kali
+   memanggil endpoint cron, dan endpoint akan menolak permintaan yang
+   header-nya tidak cocok.
+2. **Pastikan `BROADCAST_PROCESS_SECRET` dan `SUPABASE_SERVICE_ROLE_KEY`**
+   juga sudah diisi (lihat bagian Konfigurasi Environment di atas) — cron
+   job memerlukan keduanya untuk memicu ulang proses broadcast.
+3. Cron Job di Vercel **hanya aktif di plan Pro** ke atas untuk frekuensi
+   di bawah harian; di plan Hobby/gratis, cron tetap bisa dipakai tapi
+   dengan frekuensi minimum 1x per hari. Jika kamu memakai plan gratis,
+   sesuaikan `schedule` di `vercel.json` (misal `"0 0 * * *"` untuk sekali
+   sehari), atau pertimbangkan upgrade plan jika volume broadcast cukup
+   besar dan sering, supaya job macet bisa terdeteksi lebih cepat.
+4. Verifikasi cron berjalan: buka **Vercel Dashboard → Project kamu → Cron
+   Jobs** setelah deploy, di sana akan terlihat riwayat eksekusi dan
+   responsnya setiap kali endpoint dipanggil.
 
 ## Catatan keamanan
 
@@ -310,3 +399,19 @@ muncul sesuai data yang sudah diinput).
   dengan akses baca publik (diperlukan agar gambar bisa dimuat saat membuat
   tiket dan saat dikirim ke Fonnte), tapi hanya panitia yang login yang bisa
   mengunggah/mengubah/menghapusnya.
+- Endpoint `/api/broadcast/process` dan `/api/broadcast/cron` sengaja
+  dikecualikan dari wajib-login di Middleware karena dipanggil server-ke-server
+  (bukan dari sesi browser pengguna), tapi masing-masing tetap diamankan
+  lewat secret sendiri-sendiri di dalam route handler-nya:
+  - `/api/broadcast/process` memeriksa `BROADCAST_PROCESS_SECRET` yang
+    dikirim di body request.
+  - `/api/broadcast/cron` memeriksa header `Authorization: Bearer
+<CRON_SECRET>` yang otomatis dikirim Vercel setiap kali cron berjalan.
+  - Permintaan tanpa secret yang cocok akan ditolak dengan HTTP 401. Jaga
+    kerahasiaan kedua nilai ini seperti password, dan **gunakan nilai yang
+    berbeda** untuk masing-masing — jangan dipakai sama, supaya kebocoran
+    salah satu secret tidak otomatis membuka jalur yang lain.
+- Endpoint-endpoint tersebut memakai `SUPABASE_SERVICE_ROLE_KEY` (bukan anon
+  key) karena tidak ada sesi login untuk diandalkan RLS biasa. Key ini
+  memiliki akses penuh ke seluruh database tanpa terikat Row Level Security
+  apa pun — jangan pernah expose ke kode sisi klien atau commit ke repository.

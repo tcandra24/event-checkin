@@ -64,6 +64,47 @@ create table if not exists public.broadcast_logs (
   created_at timestamptz not null default now()
 );
 
+-- 3b. Antrian (queue) broadcast WhatsApp — header job per klik "Kirim broadcast"
+create table if not exists public.broadcast_jobs (
+  id uuid primary key default gen_random_uuid(),
+  created_by uuid references auth.users(id),
+  message_template text not null,
+  target_filter text not null default 'all',
+  include_qr boolean not null default false,
+  status text not null default 'queued' check (
+    status in ('queued', 'processing', 'completed', 'failed', 'cancelled')
+  ),
+  total_recipients integer not null default 0,
+  total_success integer not null default 0,
+  total_failed integer not null default 0,
+  -- Jeda antar pesan (ms) dan ukuran batch per pemanggilan endpoint proses,
+  -- disimpan per job agar mudah disesuaikan tanpa redeploy.
+  delay_min_ms integer not null default 3000,
+  delay_max_ms integer not null default 8000,
+  batch_size integer not null default 10,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  finished_at timestamptz
+);
+
+create index if not exists broadcast_jobs_status_idx on public.broadcast_jobs (status);
+
+-- 3c. Item per penerima di dalam satu job broadcast
+create table if not exists public.broadcast_job_items (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.broadcast_jobs(id) on delete cascade,
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  status text not null default 'pending' check (
+    status in ('pending', 'sent', 'failed')
+  ),
+  error_message text,
+  sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists broadcast_job_items_job_id_idx on public.broadcast_job_items (job_id);
+create index if not exists broadcast_job_items_status_idx on public.broadcast_job_items (job_id, status);
+
 -- 4. Pengaturan acara: nama, alamat, dan gambar template tiket/QR
 create table if not exists public.event_settings (
   id integer primary key default 1,
@@ -91,6 +132,8 @@ for each row execute function public.set_updated_at();
 
 alter table public.participants enable row level security;
 alter table public.broadcast_logs enable row level security;
+alter table public.broadcast_jobs enable row level security;
+alter table public.broadcast_job_items enable row level security;
 alter table public.event_settings enable row level security;
 
 drop policy if exists "authenticated_select_participants" on public.participants;
@@ -120,6 +163,20 @@ create policy "authenticated_delete_participants"
 drop policy if exists "authenticated_all_broadcast_logs" on public.broadcast_logs;
 create policy "authenticated_all_broadcast_logs"
   on public.broadcast_logs for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated_all_broadcast_jobs" on public.broadcast_jobs;
+create policy "authenticated_all_broadcast_jobs"
+  on public.broadcast_jobs for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated_all_broadcast_job_items" on public.broadcast_job_items;
+create policy "authenticated_all_broadcast_job_items"
+  on public.broadcast_job_items for all
   to authenticated
   using (true)
   with check (true);
