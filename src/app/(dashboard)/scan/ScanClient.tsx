@@ -21,11 +21,20 @@ export function ScanClient() {
   const [recentScans, setRecentScans] = useState<Participant[]>([]);
   const [deviceInput, setDeviceInput] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isRestartingCamera, setIsRestartingCamera] = useState(false);
   const scannerRef = useRef<import("html5-qrcode").Html5Qrcode | null>(null);
   const processingRef = useRef(false);
   const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
   const deviceInputRef = useRef<HTMLInputElement>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
+  // Ref untuk menghindari stale closure & circular dependency: startCamera
+  // dan restartCameraForResize saling membutuhkan satu sama lain, tapi
+  // urutan definisinya tidak bisa keduanya saling mengacu langsung lewat
+  // useCallback biasa. cameraActiveRef dipakai di listener fullscreenchange
+  // supaya selalu membaca status TERBARU (bukan nilai yang "terjebak" dari
+  // saat listener pertama kali didaftarkan).
+  const startCameraRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const cameraActiveRef = useRef(false);
 
   const runCheckIn = useCallback(async (rawCode: string) => {
     if (processingRef.current) return;
@@ -77,27 +86,44 @@ export function ScanClient() {
   }
 
   /**
-   * html5-qrcode mengukur lebar parent container HANYA SEKALI saat kamera
-   * pertama kali di-start, lalu mengunci lebar elemen <video> yang dia buat
-   * lewat inline style (style.width = "672px", dst) — bukan persentase
-   * yang otomatis menyesuaikan. Akibatnya, saat container berubah ukuran
-   * (misal masuk/keluar mode layar penuh), elemen <video> TIDAK ikut
-   * menyesuaikan karena dia tidak tahu parent-nya berubah — lebar tetap
-   * terkunci ke nilai pixel statis dari saat kamera pertama di-start.
+   * html5-qrcode mengukur ukuran video HANYA SEKALI saat kamera di-start,
+   * lalu memakai ukuran itu untuk dua hal sekaligus: (1) lebar/tinggi
+   * elemen <video> di layar, dan (2) kanvas internal untuk crop & decode
+   * QR (termasuk posisi kotak qrbox). Kedua hal ini dihitung bersamaan
+   * dari satu pengukuran yang sama.
    *
-   * Fungsi ini mencari elemen <video> tersebut secara manual dan menimpa
-   * inline style itu menjadi 100% / 100%, supaya video benar-benar
-   * mengikuti ukuran container saat ini. Dipanggil setiap kali status
-   * fullscreen berubah (lihat listener di bawah).
+   * Sebelumnya kami mencoba menimpa CSS video secara manual supaya
+   * tampilannya menyesuaikan saat masuk/keluar mode layar penuh — tapi ini
+   * HANYA memperbaiki tampilan visual, sedangkan kanvas internal untuk
+   * decode QR tetap memakai ukuran lama (dari sebelum fullscreen). Akibatnya
+   * video terlihat besar di layar, tapi area yang benar-benar di-scan oleh
+   * decoder tidak match dengan apa yang user lihat — scan jadi gagal total
+   * saat fullscreen.
+   *
+   * Solusi yang benar: restart kamera (stop lalu start ulang) setiap kali
+   * status fullscreen berubah, supaya html5-qrcode mengukur ulang dari nol
+   * berdasarkan ukuran container yang sudah benar — tampilan dan logic
+   * decode kembali selaras. Konsekuensinya ada kedip singkat saat transisi
+   * (kamera mati-hidup sebentar), tapi ini satu-satunya cara reliable tanpa
+   * menyentuh internal library.
    */
-  const syncVideoElementSize = useCallback(() => {
-    const container = document.getElementById(SCANNER_ELEMENT_ID);
-    const video = container?.querySelector("video");
-    if (video) {
-      video.style.width = "100%";
-      video.style.height = "100%";
-      video.style.objectFit = "cover";
+  const restartCameraForResize = useCallback(async () => {
+    if (!scannerRef.current) return;
+    setIsRestartingCamera(true);
+    try {
+      await scannerRef.current.stop();
+      await scannerRef.current.clear();
+    } catch {
+      // kamera mungkin sudah dalam proses berhenti, aman diabaikan
     }
+    scannerRef.current = null;
+
+    // Beri waktu agar browser benar-benar selesai mengubah ukuran container
+    // (masuk/keluar fullscreen) sebelum kamera baru mengukur ulang ukurannya.
+    await new Promise((r) => setTimeout(r, 150));
+
+    await startCameraRef.current?.();
+    setIsRestartingCamera(false);
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
@@ -119,20 +145,20 @@ export function ScanClient() {
   // (misal user menekan Esc, atau swipe-back di HP) — listener ini
   // memastikan state isFullscreen selalu sinkron dengan kondisi nyata
   // browser, bukan cuma mengandalkan klik tombol. Listener yang sama juga
-  // memicu syncVideoElementSize() setiap kali status berubah, sehingga
-  // perubahan lewat Esc/back pun tetap memperbaiki ukuran video.
+  // memicu restart kamera setiap kali status berubah, sehingga perubahan
+  // lewat Esc/back pun tetap membuat scan QR berfungsi dengan benar.
   useEffect(() => {
     function handleFullscreenChange() {
       setIsFullscreen(!!document.fullscreenElement);
-      // Beri waktu 1 frame agar browser benar-benar selesai mengubah
-      // ukuran kontainer sebelum kita ukur ulang videonya.
-      requestAnimationFrame(syncVideoElementSize);
+      if (cameraActiveRef.current) {
+        restartCameraForResize();
+      }
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, [syncVideoElementSize]);
+  }, [restartCameraForResize]);
 
   // Keluar otomatis dari full screen jika kamera dimatikan atau pindah ke
   // mode alat scanner/manual — mode full screen hanya relevan untuk kamera.
@@ -160,14 +186,25 @@ export function ScanClient() {
         },
       );
       setCameraActive(true);
-      // Pastikan video langsung mengisi penuh container sejak awal,
-      // bukan cuma mengandalkan ukuran statis yang diukur library saat start.
-      requestAnimationFrame(syncVideoElementSize);
+      cameraActiveRef.current = true;
     } catch (e) {
       setCameraError(e instanceof Error ? e.message : "Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
       setCameraActive(false);
+      cameraActiveRef.current = false;
     }
-  }, [handleDetected, syncVideoElementSize]);
+  }, [handleDetected]);
+
+  // Selalu sinkronkan ref ini dengan state terbaru, supaya listener
+  // fullscreenchange (yang didaftarkan sekali di awal) tetap membaca
+  // status kamera yang akurat, bukan nilai lama dari saat listener
+  // pertama kali didaftarkan.
+  useEffect(() => {
+    cameraActiveRef.current = cameraActive;
+  }, [cameraActive]);
+
+  useEffect(() => {
+    startCameraRef.current = startCamera;
+  }, [startCamera]);
 
   const stopCamera = useCallback(async () => {
     if (scannerRef.current) {
@@ -239,10 +276,20 @@ export function ScanClient() {
             <>
               <div className={isFullscreen ? "relative w-full flex-1 overflow-hidden rounded-xl bg-(--color-ink)" : "relative mx-auto aspect-video w-full max-w-2xl overflow-hidden rounded-xl bg-(--color-ink)"}>
                 <div id={SCANNER_ELEMENT_ID} className="absolute inset-0 h-full w-full [&>video]:h-full [&>video]:w-full [&>video]:object-cover" />
-                {!cameraActive && (
+                {!cameraActive && !isRestartingCamera && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-(--color-ink) text-white/70">
                     <QrCode className="h-12 w-12" strokeWidth={1.5} />
                     <p className="text-sm">Kamera belum aktif</p>
+                  </div>
+                )}
+
+                {/* Overlay singkat saat kamera di-restart untuk menyesuaikan
+                    ukuran (masuk/keluar layar penuh) — tanpa ini, kedip
+                    sesaat saat transisi bisa terlihat seperti aplikasi macet. */}
+                {isRestartingCamera && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-(--color-ink) text-white/70">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    <p className="text-sm">Menyesuaikan tampilan kamera...</p>
                   </div>
                 )}
 
@@ -250,7 +297,11 @@ export function ScanClient() {
                     area kamera, baik dalam mode normal maupun full screen,
                     supaya mudah dijangkau tanpa perlu cari tombol lain. */}
                 {cameraActive && (
-                  <button onClick={toggleFullscreen} className="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm hover:bg-black/70">
+                  <button
+                    onClick={toggleFullscreen}
+                    disabled={isRestartingCamera}
+                    className="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm hover:bg-black/70 disabled:opacity-50"
+                  >
                     {isFullscreen ? (
                       <>
                         <Minimize className="h-3.5 w-3.5" />
