@@ -35,6 +35,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
     const totalTickets = participants.length;
     const hadirTickets = participants.filter((p) => p.status === "hadir");
     const hadirPeople = hadirTickets.reduce((sum, p) => sum + p.qty, 0);
+
     return {
       totalTickets,
       totalPeople,
@@ -143,7 +144,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px] max-w-sm">
+        <div className="relative flex-1 min-w-60 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--color-slate-light)" />
           <input
             value={search}
