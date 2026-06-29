@@ -18,7 +18,7 @@ Terima kasih!`;
 const TICKET_TEMPLATE = `Halo {nama},
 
 Berikut tiket QR code kamu untuk menghadiri acara kami.
-Nomor kursi: {kursi}
+Kursi/Meja: {kursi}
 Rombongan: {keluarga}
 Berlaku untuk: {qty} orang
 

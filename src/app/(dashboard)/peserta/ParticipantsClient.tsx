@@ -30,6 +30,7 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
   const participants = initialParticipants;
   const [search, setSearch] = useState("");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
+  const [seatFilter, setSeatFilter] = useState<string>("all");
   const [rsvpFilter, setRsvpFilter] = useState<string>("all");
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [, startTransition] = useTransition();
@@ -43,6 +44,10 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
     return Array.from(new Set(participants.map((p) => p.family_group))).sort();
   }, [participants]);
 
+  const seatOptions = useMemo(() => {
+    return Array.from(new Set(participants.map((p) => p.seat_number))).sort();
+  }, [participants]);
+
   const pendingRsvpCount = useMemo(() => participants.filter((p) => p.rsvp_status === "menunggu_approval").length, [participants]);
 
   const filtered = useMemo(() => {
@@ -54,10 +59,11 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
         p.family_group.toLowerCase().includes(search.toLowerCase()) ||
         p.code.toLowerCase().includes(search.toLowerCase());
       const matchFamily = familyFilter === "all" || p.family_group === familyFilter;
+      const matchSeat = seatFilter === "all" || p.seat_number === seatFilter;
       const matchRsvp = rsvpFilter === "all" || p.rsvp_status === rsvpFilter;
-      return matchSearch && matchFamily && matchRsvp;
+      return matchSearch && matchFamily && matchSeat && matchRsvp;
     });
-  }, [participants, search, familyFilter, rsvpFilter]);
+  }, [participants, search, familyFilter, seatFilter, rsvpFilter]);
 
   const totalPax = useMemo(() => filtered.reduce((sum, p) => sum + p.qty, 0), [filtered]);
 
@@ -108,7 +114,7 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari nama, HP, kursi, keluarga, atau kode..."
+            placeholder="Cari nama, HP, kursi/meja, keluarga, atau kode..."
             className="w-full rounded-lg border border-(--color-border) bg-white py-2.5 pl-9 pr-3 text-sm focus:border-(--color-ink) focus:outline-none"
           />
         </div>
@@ -117,6 +123,14 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
           {familyOptions.map((fg) => (
             <option key={fg} value={fg}>
               {fg}
+            </option>
+          ))}
+        </select>
+        <select value={seatFilter} onChange={(e) => setSeatFilter(e.target.value)} className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none">
+          <option value="all">Semua kursi/meja</option>
+          {seatOptions.map((seat) => (
+            <option key={seat} value={seat}>
+              {seat}
             </option>
           ))}
         </select>
@@ -145,7 +159,7 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
                 <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
                   <th className="px-5 py-3 font-medium">Nama</th>
                   <th className="px-5 py-3 font-medium">Kontak</th>
-                  <th className="px-5 py-3 font-medium">Kursi</th>
+                  <th className="px-5 py-3 font-medium">Kursi/Meja</th>
                   <th className="px-5 py-3 font-medium">Keluarga</th>
                   <th className="px-5 py-3 font-medium">Qty</th>
                   <th className="px-5 py-3 font-medium">Kehadiran</th>
@@ -230,7 +244,7 @@ export function ParticipantsClient({ initialParticipants }: { initialParticipant
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-(--color-slate)">Kursi {p.seat_number}</span>
+                  <span className="font-mono text-xs text-(--color-slate)">Kursi/Meja {p.seat_number}</span>
                   <FamilyGroupBadge familyGroup={p.family_group} />
                   <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                 </div>

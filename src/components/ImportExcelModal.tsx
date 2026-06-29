@@ -2,22 +2,10 @@
 
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import {
-  X,
-  Download,
-  Upload,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  FileSpreadsheet,
-} from "lucide-react";
-import {
-  importParticipants,
-  type ImportRow,
-  type ImportRowResult,
-} from "@/app/actions/importParticipants";
+import { X, Download, Upload, Loader2, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { importParticipants, type ImportRow, type ImportRowResult } from "@/app/actions/importParticipants";
 
-const TEMPLATE_HEADERS = ["Nama", "No HP", "Nomor Kursi", "Keluarga", "Qty"];
+const TEMPLATE_HEADERS = ["Nama", "No HP", "Kursi/Meja", "Keluarga", "Qty"];
 
 type ParsedRow = ImportRow & { rowNumber: number; parseError?: string };
 
@@ -48,9 +36,7 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
         const parsed: ParsedRow[] = rows.map((r, idx) => {
           const get = (...keys: string[]): string => {
             for (const k of keys) {
-              const found = Object.keys(r).find(
-                (key) => key.trim().toLowerCase() === k.toLowerCase()
-              );
+              const found = Object.keys(r).find((key) => key.trim().toLowerCase() === k.toLowerCase());
               if (found && r[found] !== undefined && r[found] !== "") {
                 return String(r[found]).trim();
               }
@@ -60,7 +46,7 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
 
           const name = get("Nama", "Name");
           const phone = get("No HP", "No. HP", "Nomor HP", "Phone", "HP");
-          const seatNumber = get("Nomor Kursi", "Kursi", "Seat Number", "Seat");
+          const seatNumber = get("Kursi/Meja", "Nomor Kursi", "Kursi", "Meja", "Nomor Meja", "Seat Number", "Seat");
           const familyGroup = get("Keluarga", "Family", "Family Group", "Rombongan");
           const qtyRaw = get("Qty", "Jumlah", "Pax");
           const qty = qtyRaw ? parseInt(qtyRaw, 10) : 1;
@@ -68,7 +54,7 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
           let parseError: string | undefined;
           if (!name) parseError = "Nama kosong";
           else if (!phone) parseError = "No HP kosong";
-          else if (!seatNumber) parseError = "Nomor kursi kosong";
+          else if (!seatNumber) parseError = "Kursi/Meja kosong";
           else if (!familyGroup) parseError = "Keluarga kosong";
           else if (!Number.isFinite(qty) || qty < 1) parseError = "Qty tidak valid";
 
@@ -93,21 +79,13 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
   });
 }
 
-export function ImportExcelModal({
-  onClose,
-  onImported,
-}: {
-  onClose: () => void;
-  onImported: () => void;
-}) {
+export function ImportExcelModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [parseFileError, setParseFileError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [rowResults, setRowResults] = useState<ImportRowResult[]>([]);
-  const [summary, setSummary] = useState<{ success: number; failed: number } | null>(
-    null
-  );
+  const [summary, setSummary] = useState<{ success: number; failed: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validRows = parsedRows.filter((r) => !r.parseError);
@@ -127,9 +105,7 @@ export function ImportExcelModal({
       setParsedRows(rows);
       setStep("preview");
     } catch (err) {
-      setParseFileError(
-        err instanceof Error ? err.message : "Gagal membaca file."
-      );
+      setParseFileError(err instanceof Error ? err.message : "Gagal membaca file.");
     }
   }
 
@@ -142,7 +118,7 @@ export function ImportExcelModal({
         seat_number: r.seat_number,
         family_group: r.family_group,
         qty: r.qty,
-      }))
+      })),
     );
     setImporting(false);
 
@@ -164,23 +140,11 @@ export function ImportExcelModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={step === "upload" ? onClose : undefined}
-    >
-      <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl thin-scrollbar"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={step === "upload" ? onClose : undefined}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl thin-scrollbar" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-(--color-border) px-6 py-4">
-          <h2 className="font-display text-base font-semibold text-(--color-ink)">
-            Import Peserta dari Excel
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-full p-1 text-(--color-slate) hover:bg-slate-100"
-            aria-label="Tutup"
-          >
+          <h2 className="font-display text-base font-semibold text-(--color-ink)">Import Peserta dari Excel</h2>
+          <button onClick={onClose} className="rounded-full p-1 text-(--color-slate) hover:bg-slate-100" aria-label="Tutup">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -189,54 +153,30 @@ export function ImportExcelModal({
           <div className="px-6 py-6">
             <div className="rounded-xl border border-dashed border-(--color-border) bg-slate-50 p-6 text-center">
               <FileSpreadsheet className="mx-auto h-10 w-10 text-(--color-slate-light)" />
-              <p className="mt-3 text-sm text-(--color-slate)">
-                Unggah file Excel (.xlsx/.xls) berisi data peserta sesuai format
-                template.
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-4 flex items-center gap-2 rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 mx-auto"
-              >
+              <p className="mt-3 text-sm text-(--color-slate)">Unggah file Excel (.xlsx/.xls) berisi data peserta sesuai format template.</p>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileChange} className="hidden" />
+              <button onClick={() => fileInputRef.current?.click()} className="mt-4 flex items-center gap-2 rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 mx-auto">
                 <Upload className="h-4 w-4" />
                 Pilih file Excel
               </button>
             </div>
 
-            {parseFileError && (
-              <p className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
-                {parseFileError}
-              </p>
-            )}
+            {parseFileError && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{parseFileError}</p>}
 
             <div className="mt-5 flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-blue-900">
-                  Belum punya template?
-                </p>
-                <p className="text-xs text-blue-700">
-                  Unduh template kosong dengan kolom yang sudah sesuai.
-                </p>
+                <p className="text-sm font-medium text-blue-900">Belum punya template?</p>
+                <p className="text-xs text-blue-700">Unduh template kosong dengan kolom yang sudah sesuai.</p>
               </div>
-              <button
-                onClick={downloadTemplate}
-                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-50"
-              >
+              <button onClick={downloadTemplate} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-50">
                 <Download className="h-3.5 w-3.5" />
                 Unduh template
               </button>
             </div>
 
             <p className="mt-3 text-xs text-(--color-slate)">
-              Kolom yang dibutuhkan: <strong>Nama</strong>, <strong>No HP</strong>,{" "}
-              <strong>Nomor Kursi</strong>, <strong>Keluarga</strong>,{" "}
-              <strong>Qty</strong> (jumlah pax per tiket, boleh dikosongkan = default 1).
+              Kolom yang dibutuhkan: <strong>Nama</strong>, <strong>No HP</strong>, <strong>Kursi/Meja</strong> (isi nomor kursi individual atau nomor meja kelompok), <strong>Keluarga</strong>, <strong>Qty</strong> (jumlah pax per tiket, boleh
+              dikosongkan = default 1).
             </p>
           </div>
         )}
@@ -244,14 +184,8 @@ export function ImportExcelModal({
         {step === "preview" && (
           <div className="px-6 py-5">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="rounded-lg bg-(--color-emerald-soft) px-3 py-2 text-sm font-medium text-emerald-700">
-                {validRows.length} baris valid
-              </div>
-              {invalidRows.length > 0 && (
-                <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                  {invalidRows.length} baris bermasalah (akan dilewati)
-                </div>
-              )}
+              <div className="rounded-lg bg-(--color-emerald-soft) px-3 py-2 text-sm font-medium text-emerald-700">{validRows.length} baris valid</div>
+              {invalidRows.length > 0 && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{invalidRows.length} baris bermasalah (akan dilewati)</div>}
             </div>
 
             <div className="mt-4 max-h-80 overflow-y-auto rounded-lg border border-(--color-border) thin-scrollbar">
@@ -261,7 +195,7 @@ export function ImportExcelModal({
                     <th className="px-3 py-2 font-medium">Baris</th>
                     <th className="px-3 py-2 font-medium">Nama</th>
                     <th className="px-3 py-2 font-medium">No HP</th>
-                    <th className="px-3 py-2 font-medium">Kursi</th>
+                    <th className="px-3 py-2 font-medium">Kursi/Meja</th>
                     <th className="px-3 py-2 font-medium">Keluarga</th>
                     <th className="px-3 py-2 font-medium">Qty</th>
                     <th className="px-3 py-2 font-medium">Status</th>
@@ -276,26 +210,14 @@ export function ImportExcelModal({
                       <td className="px-3 py-2">{row.seat_number || "—"}</td>
                       <td className="px-3 py-2">{row.family_group || "—"}</td>
                       <td className="px-3 py-2">{row.qty}</td>
-                      <td className="px-3 py-2">
-                        {row.parseError ? (
-                          <span className="text-xs font-medium text-red-600">
-                            {row.parseError}
-                          </span>
-                        ) : (
-                          <span className="text-xs font-medium text-emerald-600">Siap</span>
-                        )}
-                      </td>
+                      <td className="px-3 py-2">{row.parseError ? <span className="text-xs font-medium text-red-600">{row.parseError}</span> : <span className="text-xs font-medium text-emerald-600">Siap</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            {parseFileError && (
-              <p className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
-                {parseFileError}
-              </p>
-            )}
+            {parseFileError && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{parseFileError}</p>}
 
             <div className="mt-5 flex gap-3">
               <button
@@ -314,9 +236,7 @@ export function ImportExcelModal({
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
                 {importing && <Loader2 className="h-4 w-4 animate-spin" />}
-                {importing
-                  ? "Mengimpor..."
-                  : `Import ${validRows.length} peserta`}
+                {importing ? "Mengimpor..." : `Import ${validRows.length} peserta`}
               </button>
             </div>
           </div>
@@ -327,20 +247,14 @@ export function ImportExcelModal({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-(--color-emerald-soft)">
               <CheckCircle2 className="h-6 w-6 text-(--color-emerald)" />
             </div>
-            <h3 className="mt-3 font-display text-base font-semibold text-(--color-ink)">
-              Import selesai
-            </h3>
+            <h3 className="mt-3 font-display text-base font-semibold text-(--color-ink)">Import selesai</h3>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="rounded-lg bg-(--color-emerald-soft) p-3 text-center">
-                <p className="font-display text-lg font-semibold text-emerald-700">
-                  {summary.success}
-                </p>
+                <p className="font-display text-lg font-semibold text-emerald-700">{summary.success}</p>
                 <p className="text-xs text-emerald-700">Berhasil ditambahkan</p>
               </div>
               <div className="rounded-lg bg-red-50 p-3 text-center">
-                <p className="font-display text-lg font-semibold text-red-700">
-                  {summary.failed}
-                </p>
+                <p className="font-display text-lg font-semibold text-red-700">{summary.failed}</p>
                 <p className="text-xs text-red-700">Gagal</p>
               </div>
             </div>
@@ -362,10 +276,7 @@ export function ImportExcelModal({
               </div>
             )}
 
-            <button
-              onClick={handleFinish}
-              className="mt-6 w-full rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-            >
+            <button onClick={handleFinish} className="mt-6 w-full rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">
               Selesai
             </button>
           </div>

@@ -251,7 +251,7 @@ export function ScanClient() {
                   <QtyBadge qty={feedback.participant.qty} rsvp_qty_response={feedback.participant.rsvp_qty_response} />
                   <span className="flex items-center gap-1 text-xs text-(--color-slate)">
                     <Armchair className="h-3 w-3" />
-                    Kursi {feedback.participant.seat_number}
+                    Kursi/Meja {feedback.participant.seat_number}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-(--color-slate)">{formatPhoneDisplay(feedback.participant.phone)}</p>
@@ -274,7 +274,7 @@ export function ScanClient() {
                 <li key={`${p.id}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-(--color-ink)">{p.name}</p>
-                    <p className="text-xs text-(--color-slate)">Kursi {p.seat_number}</p>
+                    <p className="text-xs text-(--color-slate)">Kursi/Meja {p.seat_number}</p>
                   </div>
                   <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                 </li>

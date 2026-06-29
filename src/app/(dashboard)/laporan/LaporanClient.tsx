@@ -20,9 +20,14 @@ export function LaporanClient({ participants }: { participants: Participant[] })
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "hadir" | "belum_hadir">("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
+  const [seatFilter, setSeatFilter] = useState<string>("all");
 
   const familyOptions = useMemo(() => {
     return Array.from(new Set(participants.map((p) => p.family_group))).sort();
+  }, [participants]);
+
+  const seatOptions = useMemo(() => {
+    return Array.from(new Set(participants.map((p) => p.seat_number))).sort();
   }, [participants]);
 
   const stats = useMemo(() => {
@@ -45,9 +50,10 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search) || p.seat_number.toLowerCase().includes(search.toLowerCase()) || p.family_group.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || p.status === statusFilter;
       const matchFamily = familyFilter === "all" || p.family_group === familyFilter;
-      return matchSearch && matchStatus && matchFamily;
+      const matchSeat = seatFilter === "all" || p.seat_number === seatFilter;
+      return matchSearch && matchStatus && matchFamily && matchSeat;
     });
-  }, [participants, search, statusFilter, familyFilter]);
+  }, [participants, search, statusFilter, familyFilter, seatFilter]);
 
   function rsvpLabel(status: Participant["rsvp_status"]): string {
     switch (status) {
@@ -63,7 +69,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
   }
 
   function handleExportCsv() {
-    const headers = ["Nama", "No HP", "Nomor Kursi", "Keluarga", "Qty", "Status Kehadiran", "Waktu Check-in", "Status RSVP", "Jumlah RSVP", "Kode"];
+    const headers = ["Nama", "No HP", "Kursi/Meja", "Keluarga", "Qty", "Status Kehadiran", "Waktu Check-in", "Status RSVP", "Jumlah RSVP", "Kode"];
     const rows = filtered.map((p) => [
       p.name,
       formatPhoneDisplay(p.phone),
@@ -137,12 +143,12 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-60 max-w-sm">
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--color-slate-light)" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari nama, HP, kursi, atau keluarga..."
+            placeholder="Cari nama, HP, kursi/meja, atau keluarga..."
             className="w-full rounded-lg border border-(--color-border) bg-white py-2.5 pl-9 pr-3 text-sm focus:border-(--color-ink) focus:outline-none"
           />
         </div>
@@ -151,6 +157,14 @@ export function LaporanClient({ participants }: { participants: Participant[] })
           {familyOptions.map((fg) => (
             <option key={fg} value={fg}>
               {fg}
+            </option>
+          ))}
+        </select>
+        <select value={seatFilter} onChange={(e) => setSeatFilter(e.target.value)} className="rounded-lg border border-(--color-border) bg-white px-3 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none">
+          <option value="all">Semua kursi/meja</option>
+          {seatOptions.map((seat) => (
+            <option key={seat} value={seat}>
+              {seat}
             </option>
           ))}
         </select>
@@ -180,7 +194,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
               <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
                 <th className="px-5 py-3 font-medium">Nama</th>
                 <th className="px-5 py-3 font-medium">Kontak</th>
-                <th className="px-5 py-3 font-medium">Kursi</th>
+                <th className="px-5 py-3 font-medium">Kursi/Meja</th>
                 <th className="px-5 py-3 font-medium">Keluarga</th>
                 <th className="px-5 py-3 font-medium">Qty</th>
                 <th className="px-5 py-3 font-medium">Status</th>
@@ -238,7 +252,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                   <p className="shrink-0 text-xs text-(--color-slate)">{formatDateTime(p.checked_in_at)}</p>
                 </div>
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-(--color-slate)">Kursi {p.seat_number}</span>
+                  <span className="font-mono text-xs text-(--color-slate)">Kursi/Meja {p.seat_number}</span>
                   <FamilyGroupBadge familyGroup={p.family_group} />
                   <QtyBadge qty={p.qty} rsvp_qty_response={p.rsvp_qty_response} />
                 </div>

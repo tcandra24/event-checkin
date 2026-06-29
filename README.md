@@ -11,9 +11,10 @@ Fonnte.
 1. **Login panitia** (Supabase Auth) — wajib login untuk akses semua halaman
    kecuali halaman publik RSVP.
 2. **Input Peserta** — tambah, ubah, hapus data peserta dengan field nama,
-   nomor WhatsApp, **nomor kursi**, **keluarga/rombongan**, dan **qty**
-   (jumlah pax maksimal per tiket). Setiap peserta otomatis mendapat kode
-   unik dan **tiket QR bergambar**.
+   nomor WhatsApp, **kursi/meja** (bisa diisi nomor kursi individual atau
+   nomor meja kelompok), **keluarga/rombongan**, dan **qty** (jumlah pax
+   maksimal per tiket). Setiap peserta otomatis mendapat kode unik dan
+   **tiket QR bergambar**.
 3. **Import dari Excel** — unduh template `.xlsx` siap pakai, isi data
    peserta secara massal, unggah kembali untuk diimpor sekaligus. Ada
    preview & validasi per baris sebelum data benar-benar disimpan.
@@ -204,23 +205,23 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 
 ## Field data peserta
 
-| Field               | Keterangan                                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------------- |
-| `name`              | Nama tamu/peserta                                                                              |
-| `phone`             | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                                          |
-| `seat_number`       | Nomor kursi — teks bebas, juga dipakai untuk pencarian/grouping                                |
-| `family_group`      | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast                         |
-| `qty`               | Jumlah pax maksimal yang berlaku untuk 1 QR code                                               |
-| `code`              | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`                                    |
-| `status`            | Status kehadiran fisik: `belum_hadir` atau `hadir`                                             |
-| `rsvp_status`       | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir` |
-| `rsvp_qty_response` | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)                                   |
+| Field               | Keterangan                                                                                                                                                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`              | Nama tamu/peserta                                                                                                                                                                                                      |
+| `phone`             | Nomor WhatsApp (otomatis dirapikan ke format `62...`)                                                                                                                                                                  |
+| `seat_number`       | Kursi/Meja — teks bebas, bisa diisi nomor kursi individual (misal "A12") atau nomor meja kelompok (misal "Meja 5") yang boleh ditempati beberapa keluarga/tiket berbeda; dipakai untuk pencarian, grouping, dan filter |
+| `family_group`      | Nama keluarga/rombongan — teks bebas, dipakai untuk filter & broadcast                                                                                                                                                 |
+| `qty`               | Jumlah pax maksimal yang berlaku untuk 1 QR code                                                                                                                                                                       |
+| `code`              | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`                                                                                                                                                            |
+| `status`            | Status kehadiran fisik: `belum_hadir` atau `hadir`                                                                                                                                                                     |
+| `rsvp_status`       | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir`                                                                                                                         |
+| `rsvp_qty_response` | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)                                                                                                                                                           |
 
 ## Import peserta dari Excel
 
 1. Buka halaman **Input Peserta**, klik **Import Excel**.
 2. Klik **Unduh template** untuk mendapatkan file `.xlsx` dengan kolom yang
-   sudah benar: `Nama`, `No HP`, `Nomor Kursi`, `Keluarga`, `Qty`.
+   sudah benar: `Nama`, `No HP`, `Kursi/Meja`, `Keluarga`, `Qty`.
 3. Isi data di Excel (boleh pakai aplikasi spreadsheet apa saja), simpan.
 4. Kembali ke aplikasi, unggah file tersebut.
 5. Aplikasi menampilkan **preview** seluruh baris beserta status validasinya
@@ -229,8 +230,17 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
    otomatis mendapat kode unik dan tiket QR seperti input manual.
 
 > Kolom `Qty` boleh dikosongkan — defaultnya akan dianggap 1. Nama kolom
-> bersifat fleksibel (mendukung beberapa variasi penulisan seperti "No. HP"
-> atau "Pax"), tapi paling aman tetap memakai template yang disediakan.
+> bersifat fleksibel (mendukung beberapa variasi penulisan seperti "No. HP",
+> "Pax", atau untuk kolom kursi/meja: "Nomor Kursi", "Kursi", "Meja", "Nomor
+> Meja", "Seat"), tapi paling aman tetap memakai template yang disediakan.
+> File Excel yang dibuat sebelum kolom ini diganti namanya (masih berheader
+> "Nomor Kursi") tetap bisa diimpor tanpa perlu diubah.
+>
+> Kolom **Kursi/Meja** boleh diisi nomor kursi individual (misal `A12`,
+> 1 orang per nomor) maupun nomor meja kelompok (misal `Meja 5`) yang boleh
+> diisi oleh beberapa baris/keluarga berbeda sekaligus — keduanya bisa
+> dicampur dalam satu file yang sama, sesuai kebutuhan seating arrangement
+> acara kamu.
 
 ## Konfirmasi Kehadiran (RSVP)
 
@@ -302,10 +312,11 @@ Tersedia dua mode (toggle di bagian atas modal broadcast):
 - **Tiket QR final** — mengirim gambar tiket bergambar lengkap, dipakai
   setelah RSVP disetujui atau untuk acara yang tidak memakai RSVP sama sekali.
 
-Placeholder pesan yang didukung di kedua mode: `{nama}`, `{kursi}`,
-`{keluarga}`, `{qty}`, `{kode}`. Target penerima bisa difilter berdasarkan
-status kehadiran atau per keluarga/rombongan (daftar keluarga otomatis
-muncul sesuai data yang sudah diinput).
+Placeholder pesan yang didukung di kedua mode: `{nama}`, `{kursi}`
+(berisi nilai Kursi/Meja peserta), `{keluarga}`, `{qty}`, `{kode}`. Target
+penerima bisa difilter berdasarkan status kehadiran atau per
+keluarga/rombongan (daftar keluarga otomatis muncul sesuai data yang sudah
+diinput).
 
 ### Cara kerja broadcast WhatsApp di balik layar
 
