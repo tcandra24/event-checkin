@@ -17,6 +17,11 @@ export interface ParticipantFormInput {
   qty: number;
 }
 
+export interface PhoneDuplicateCheck {
+  isDuplicate: boolean;
+  existingParticipant?: { id: string; name: string };
+}
+
 function validateInput(input: ParticipantFormInput): string | null {
   if (!input.name.trim()) return "Nama wajib diisi.";
   if (!input.phone.trim()) return "Nomor HP wajib diisi.";
@@ -150,4 +155,31 @@ export async function getPanitiaEmailMap(): Promise<Record<string, string>> {
     map[row.id] = row.email;
   }
   return map;
+}
+
+/**
+ * Mengecek apakah nomor HP yang dinormalisasi sudah dipakai peserta lain.
+ * excludeId dipakai saat mode edit, supaya peserta tidak dianggap "duplikat
+ * dengan dirinya sendiri" saat disimpan ulang tanpa mengubah nomornya.
+ */
+export async function checkPhoneDuplicate(phone: string, excludeId?: string): Promise<PhoneDuplicateCheck> {
+  const supabase = await createClient();
+  const normalizedPhone = normalizePhone(phone);
+
+  let query = supabase.from("participants").select("id, name").eq("phone", normalizedPhone);
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data } = await query.limit(1).maybeSingle();
+
+  if (!data) {
+    return { isDuplicate: false };
+  }
+
+  return {
+    isDuplicate: true,
+    existingParticipant: { id: data.id, name: data.name },
+  };
 }

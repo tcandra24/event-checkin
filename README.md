@@ -23,13 +23,21 @@ Fonnte.
    (lalu mengisi jumlah orang yang akan datang, maksimal sesuai qty tiket)
    atau **Tidak Hadir**. Konfirmasi "Hadir" masuk ke status **Menunggu
    Approval** dan perlu ditinjau oleh panitia sebelum dianggap final.
-5. **Pengaturan Tiket** — atur nama acara, alamat, dan unggah 1 gambar latar
-   yang dipakai sebagai desain tiket untuk seluruh peserta.
+5. **Pengaturan Tiket** — atur nama acara, alamat, dan unggah gambar latar
+   yang dipakai sebagai desain tiket untuk seluruh peserta. Setiap unggahan
+   baru tersimpan sebagai riwayat tersendiri (tidak menimpa yang lama),
+   sehingga gambar sebelumnya bisa dipilih kembali kapan saja tanpa perlu
+   upload ulang. Ukuran file dibatasi maksimal 1MB, divalidasi langsung di
+   browser sebelum proses unggah dimulai.
 6. **Laporan Kehadiran** — statistik hadir/belum hadir (dihitung per orang),
-   status RSVP, pencarian, filter per keluarga/rombongan, dan ekspor CSV.
+   status RSVP beserta respons yang diisi peserta (jumlah orang dikonfirmasi
+   dibanding kapasitas tiket, dan kapan diisi), pencarian, filter per
+   keluarga/rombongan, dan ekspor CSV.
 7. **Scan QR Code** — kamera HP/laptop, alat scanner QR fisik (USB/Bluetooth),
    atau input manual. Status otomatis berubah jadi "hadir". Satu QR = satu
-   kali check-in untuk seluruh rombongan dalam tiket itu.
+   kali check-in untuk seluruh rombongan dalam tiket itu. Setiap check-in
+   mencatat panitia mana yang melakukannya (berdasarkan akun yang sedang
+   login), terlihat di Laporan Kehadiran.
 8. **Broadcast WhatsApp** — dua mode: **RSVP** (kirim tautan konfirmasi
    kehadiran) atau **Tiket QR final** (kirim gambar tiket lengkap, dipakai
    setelah RSVP disetujui). Bisa difilter per status kehadiran atau per
@@ -95,6 +103,8 @@ Fonnte.
 - Sudah punya `broadcast_jobs` tapi `batch_size` defaultnya masih 10 (versi
   lama, berisiko timeout di Vercel) → jalankan
   [`sql/migration_v5.sql`](./sql/migration_v5.sql) untuk menurunkannya ke 3.
+- Belum punya kolom `checked_in_by` (pencatatan panitia yang melakukan
+  scan/check-in) → jalankan [`sql/migration_v6.sql`](./sql/migration_v6.sql).
 
 Semua migrasi di atas aman dijalankan tanpa menghapus data peserta yang
 sudah ada — jalankan secara berurutan sesuai versi schema kamu saat ini.
@@ -214,6 +224,7 @@ Cara termudah adalah deploy ke [Vercel](https://vercel.com):
 | `qty`               | Jumlah pax maksimal yang berlaku untuk 1 QR code                                                                                                                                                                       |
 | `code`              | Kode unik yang di-encode ke dalam QR, contoh `EVT-7F3K9Q2A`                                                                                                                                                            |
 | `status`            | Status kehadiran fisik: `belum_hadir` atau `hadir`                                                                                                                                                                     |
+| `checked_in_by`     | Akun panitia (auth.users.id) yang melakukan scan/check-in — `null` jika belum check-in atau jika check-in dilakukan sebelum fitur ini ditambahkan                                                                      |
 | `rsvp_status`       | `belum_konfirmasi`, `menunggu_approval`, `dikonfirmasi_hadir`, atau `dikonfirmasi_tidak_hadir`                                                                                                                         |
 | `rsvp_qty_response` | Jumlah orang yang dikonfirmasi peserta akan datang (≤ `qty`)                                                                                                                                                           |
 
@@ -294,6 +305,29 @@ kirim ke semua lalu cek manual, sesuai kebutuhan acara).
   rombongan dalam tiket itu, terlepas dari nilai `qty`.
 - Scan ulang pada QR yang sama menampilkan "Sudah check-in sebelumnya" tanpa
   mengubah data, sehingga aman dari double-scan.
+
+## Mengelola gambar latar tiket
+
+Di halaman **Pengaturan Tiket**, panel "Latar Belakang Tiket" punya dua cara
+mengatur gambar yang dipakai:
+
+- **Unggah gambar baru** — pilih file PNG/JPG/WEBP berukuran maksimal **1MB**.
+  Ukuran file divalidasi langsung di browser begitu file dipilih (sebelum
+  proses unggah dimulai), sehingga jika file terlalu besar, pesan kesalahan
+  langsung muncul tanpa perlu menunggu — server tetap memvalidasi ulang
+  batas yang sama sebagai lapis pertahanan kedua.
+- **Pilih dari riwayat** — setiap kali mengunggah gambar baru, file
+  sebelumnya **tidak dihapus atau ditimpa**; semuanya tersimpan sebagai
+  riwayat tersendiri di Supabase Storage. Klik tombol "Pilih dari riwayat"
+  untuk membuka galeri thumbnail seluruh gambar yang pernah diunggah, lalu
+  klik salah satu untuk langsung menjadikannya latar tiket aktif kembali
+  — tanpa perlu mengunggah ulang file yang sama.
+
+> Karena riwayat gambar tidak otomatis dihapus, penggunaan ruang
+> penyimpanan (Storage) akan terus bertambah seiring waktu jika sering
+> berganti gambar latar. Untuk membersihkan gambar lama yang sudah tidak
+> diperlukan sama sekali, hapus manual lewat **Supabase Dashboard → Storage
+> → ticket-assets → backgrounds/**.
 
 ## Mode pemindaian di halaman Scan
 

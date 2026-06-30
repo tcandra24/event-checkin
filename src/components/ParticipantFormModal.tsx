@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2, X, Minus, Plus } from "lucide-react";
 import type { Participant } from "@/lib/types";
-import { createParticipant, updateParticipant, type ParticipantFormInput } from "@/app/actions/participants";
+import { createParticipant, updateParticipant, checkPhoneDuplicate, type ParticipantFormInput } from "@/app/actions/participants";
 
 export function ParticipantFormModal({ participant, onClose, onSaved }: { participant?: Participant | null; onClose: () => void; onSaved: () => void }) {
   const isEdit = !!participant;
@@ -14,6 +14,9 @@ export function ParticipantFormModal({ participant, onClose, onSaved }: { partic
   const [qty, setQty] = useState(participant?.qty ?? 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [phoneDuplicateWarning, setPhoneDuplicateWarning] = useState<string | null>(null);
+  const [checkingPhone, setCheckingPhone] = useState(false);
 
   function adjustQty(delta: number) {
     setQty((prev) => Math.max(1, prev + delta));
@@ -44,6 +47,22 @@ export function ParticipantFormModal({ participant, onClose, onSaved }: { partic
     onSaved();
   }
 
+  async function handlePhoneBlur() {
+    if (!phone.trim()) {
+      setPhoneDuplicateWarning(null);
+      return;
+    }
+    setCheckingPhone(true);
+    const result = await checkPhoneDuplicate(phone, participant?.id);
+    setCheckingPhone(false);
+
+    if (result.isDuplicate && result.existingParticipant) {
+      setPhoneDuplicateWarning(`Nomor ini sudah dipakai oleh "${result.existingParticipant.name}". Boleh dilanjutkan jika memang disengaja (misal satu nomor untuk beberapa anggota keluarga).`);
+    } else {
+      setPhoneDuplicateWarning(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -69,7 +88,16 @@ export function ParticipantFormModal({ participant, onClose, onSaved }: { partic
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-(--color-ink)">Nomor WhatsApp</label>
-              <input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="628123456789" className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none" />
+              <input
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onBlur={handlePhoneBlur}
+                placeholder="08123456789"
+                className="w-full rounded-lg border border-(--color-border) px-3.5 py-2.5 text-sm focus:border-(--color-ink) focus:outline-none"
+              />
+              {checkingPhone && <p className="mt-1.5 text-xs text-(--color-slate)">Memeriksa nomor...</p>}
+              {phoneDuplicateWarning && <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{phoneDuplicateWarning}</p>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

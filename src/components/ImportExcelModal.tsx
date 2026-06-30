@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { X, Download, Upload, Loader2, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { X, Download, Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, FileSpreadsheet } from "lucide-react";
 import { importParticipants, type ImportRow, type ImportRowResult } from "@/app/actions/importParticipants";
 
 const TEMPLATE_HEADERS = ["Nama", "No HP", "Kursi/Meja", "Keluarga", "Qty"];
@@ -85,7 +85,11 @@ export function ImportExcelModal({ onClose, onImported }: { onClose: () => void;
   const [parseFileError, setParseFileError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [rowResults, setRowResults] = useState<ImportRowResult[]>([]);
-  const [summary, setSummary] = useState<{ success: number; failed: number } | null>(null);
+  const [summary, setSummary] = useState<{
+    success: number;
+    failed: number;
+    phoneWarnings: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validRows = parsedRows.filter((r) => !r.parseError);
@@ -131,6 +135,7 @@ export function ImportExcelModal({ onClose, onImported }: { onClose: () => void;
     setSummary({
       success: result.totalSuccess ?? 0,
       failed: result.totalFailed ?? 0,
+      phoneWarnings: result.totalPhoneWarnings ?? 0,
     });
     setStep("result");
   }
@@ -187,6 +192,8 @@ export function ImportExcelModal({ onClose, onImported }: { onClose: () => void;
               <div className="rounded-lg bg-(--color-emerald-soft) px-3 py-2 text-sm font-medium text-emerald-700">{validRows.length} baris valid</div>
               {invalidRows.length > 0 && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{invalidRows.length} baris bermasalah (akan dilewati)</div>}
             </div>
+
+            <p className="mt-3 text-xs text-(--color-slate)">Duplikasi nomor HP (jika ada) baru terdeteksi setelah proses import berjalan, karena pengecekan dilakukan terhadap data yang sudah tersimpan di server.</p>
 
             <div className="mt-4 max-h-80 overflow-y-auto rounded-lg border border-(--color-border) thin-scrollbar">
               <table className="w-full text-left text-sm">
@@ -248,16 +255,37 @@ export function ImportExcelModal({ onClose, onImported }: { onClose: () => void;
               <CheckCircle2 className="h-6 w-6 text-(--color-emerald)" />
             </div>
             <h3 className="mt-3 font-display text-base font-semibold text-(--color-ink)">Import selesai</h3>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-(--color-emerald-soft) p-3 text-center">
                 <p className="font-display text-lg font-semibold text-emerald-700">{summary.success}</p>
                 <p className="text-xs text-emerald-700">Berhasil ditambahkan</p>
+              </div>
+              <div className="rounded-lg bg-amber-50 p-3 text-center">
+                <p className="font-display text-lg font-semibold text-amber-700">{summary.phoneWarnings}</p>
+                <p className="text-xs text-amber-700">No HP duplikat</p>
               </div>
               <div className="rounded-lg bg-red-50 p-3 text-center">
                 <p className="font-display text-lg font-semibold text-red-700">{summary.failed}</p>
                 <p className="text-xs text-red-700">Gagal</p>
               </div>
             </div>
+
+            {summary.phoneWarnings > 0 && (
+              <div className="mt-4 max-h-40 overflow-y-auto rounded-lg bg-amber-50 px-3 py-2.5 thin-scrollbar">
+                <p className="flex items-center gap-1.5 text-sm font-medium text-amber-700">
+                  <AlertTriangle className="h-4 w-4" /> Nomor HP duplikat terdeteksi (tetap diimpor):
+                </p>
+                <ul className="mt-1.5 space-y-1 text-xs text-amber-700">
+                  {rowResults
+                    .filter((r) => r.phoneWarning)
+                    .map((r, idx) => (
+                      <li key={idx}>
+                        {r.row.name || "(tanpa nama)"} — {r.phoneWarning}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
 
             {summary.failed > 0 && (
               <div className="mt-4 max-h-40 overflow-y-auto rounded-lg bg-red-50 px-3 py-2.5 thin-scrollbar">

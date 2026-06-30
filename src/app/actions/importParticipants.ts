@@ -16,6 +16,7 @@ export interface ImportRowResult {
   row: ImportRow;
   success: boolean;
   error?: string;
+  phoneWarning?: string; // BARU — duplikat nomor HP terdeteksi, tapi tetap diimpor
 }
 
 export interface ImportResult {
@@ -24,6 +25,7 @@ export interface ImportResult {
   totalRows?: number;
   totalSuccess?: number;
   totalFailed?: number;
+  totalPhoneWarnings?: number; // BARU
   rowResults?: ImportRowResult[];
 }
 
@@ -53,6 +55,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 interface PreparedRow {
   row: ImportRow;
   code: string;
+  phoneWarning?: string;
   insertPayload: {
     name: string;
     phone: string;
@@ -71,13 +74,19 @@ interface PreparedRow {
  *
  * 1. Memvalidasi SEMUA baris dan menyiapkan kode unik untuk SEMUA baris
  *    yang lolos validasi terlebih dahulu (tanpa menyentuh database sama
- *    sekali di langkah ini, kecuali 1x query untuk daftar kode yang sudah
- *    dipakai).
- * 2. Meng-insert baris yang sudah disiapkan itu per KELOMPOK (batch) berisi
+ *    sekali di langkah ini, kecuali query untuk daftar kode & nomor HP
+ *    yang sudah dipakai).
+ * 2. Mengecek duplikasi nomor HP — baik terhadap peserta yang SUDAH ADA
+ *    di database, maupun ANTAR-BARIS di dalam file yang sama. Duplikat
+ *    TIDAK memblokir import (ada kasus sah seperti satu nomor dipakai
+ *    untuk mendaftarkan beberapa anggota keluarga sekaligus), tapi
+ *    ditandai sebagai peringatan (`phoneWarning`) di hasil akhir supaya
+ *    panitia bisa meninjau ulang jika itu tidak disengaja.
+ * 3. Meng-insert baris yang sudah disiapkan itu per KELOMPOK (batch) berisi
  *    hingga 50 baris sekaligus dalam satu pemanggilan `insert()` — bukan
  *    satu per satu. Untuk 500 baris valid, ini memangkas jumlah request ke
  *    Supabase dari 500x menjadi sekitar 10x.
- * 3. Jika satu batch gagal (misal karena salah satu barisnya melanggar
+ * 4. Jika satu batch gagal (misal karena salah satu barisnya melanggar
  *    constraint), batch tersebut otomatis di-insert ulang satu per satu
  *    HANYA untuk batch itu — supaya baris yang valid di batch yang sama
  *    tetap tersimpan, dan baris yang benar-benar bermasalah tetap bisa
@@ -112,6 +121,20 @@ export async function importParticipants(rows: ImportRow[]): Promise<ImportResul
   const { data: existingCodes } = await supabase.from("participants").select("code");
   const usedCodes = new Set((existingCodes ?? []).map((r) => r.code));
 
+  // Ambil semua nomor HP yang sudah ada di database (sudah dinormalisasi
+  // saat tersimpan), untuk dicocokkan dengan nomor pada baris yang akan
+  // diimpor. Dipetakan ke nama pemiliknya supaya pesan peringatan lebih
+  // informatif ("sama dengan nomor milik Budi Santoso").
+  const { data: existingPhones } = await supabase.from("participants").select("phone, name");
+  const phoneToExistingName = new Map<string, string>((existingPhones ?? []).map((p) => [p.phone, p.name]));
+
+  // Melacak nomor yang sudah muncul DI DALAM file yang sedang diimpor ini,
+  // supaya duplikat antar-baris (bukan cuma terhadap data lama) ikut
+  // terdeteksi. Disimpan terpisah dari phoneToExistingName karena baris
+  // pertama yang memakai suatu nomor tidak boleh "memperingatkan dirinya
+  // sendiri" — hanya baris kedua dst. dengan nomor yang sama yang ditandai.
+  const phonesSeenInThisImport = new Map<string, string>();
+
   const prepared: PreparedRow[] = [];
 
   for (const row of rows) {
@@ -129,12 +152,24 @@ export async function importParticipants(rows: ImportRow[]): Promise<ImportResul
     }
     usedCodes.add(code);
 
+    const normalizedPhone = normalizePhone(row.phone);
+    let phoneWarning: string | undefined;
+
+    if (phoneToExistingName.has(normalizedPhone)) {
+      phoneWarning = `Nomor sama dengan peserta lama: ${phoneToExistingName.get(normalizedPhone)}`;
+    } else if (phonesSeenInThisImport.has(normalizedPhone)) {
+      phoneWarning = `Nomor sama dengan baris lain di file ini: ${phonesSeenInThisImport.get(normalizedPhone)}`;
+    } else {
+      phonesSeenInThisImport.set(normalizedPhone, row.name.trim());
+    }
+
     prepared.push({
       row,
       code,
+      phoneWarning,
       insertPayload: {
         name: row.name.trim(),
-        phone: normalizePhone(row.phone),
+        phone: normalizedPhone,
         seat_number: row.seat_number.trim(),
         family_group: row.family_group.trim(),
         qty: Math.round(row.qty),
@@ -151,9 +186,10 @@ export async function importParticipants(rows: ImportRow[]): Promise<ImportResul
     const { error: batchError } = await supabase.from("participants").insert(batch.map((p) => p.insertPayload));
 
     if (!batchError) {
-      // Seluruh batch berhasil — tandai semua baris di batch ini sukses.
+      // Seluruh batch berhasil — tandai semua baris di batch ini sukses,
+      // tetap bawa phoneWarning (jika ada) supaya tampil di hasil akhir.
       for (const p of batch) {
-        rowResults.push({ row: p.row, success: true });
+        rowResults.push({ row: p.row, success: true, phoneWarning: p.phoneWarning });
       }
       continue;
     }
@@ -168,13 +204,14 @@ export async function importParticipants(rows: ImportRow[]): Promise<ImportResul
       if (singleError) {
         rowResults.push({ row: p.row, success: false, error: singleError.message });
       } else {
-        rowResults.push({ row: p.row, success: true });
+        rowResults.push({ row: p.row, success: true, phoneWarning: p.phoneWarning });
       }
     }
   }
 
   const totalSuccess = rowResults.filter((r) => r.success).length;
   const totalFailed = rowResults.filter((r) => !r.success).length;
+  const totalPhoneWarnings = rowResults.filter((r) => r.phoneWarning).length;
 
   revalidatePath("/peserta");
   revalidatePath("/laporan");
@@ -184,6 +221,7 @@ export async function importParticipants(rows: ImportRow[]): Promise<ImportResul
     totalRows: rows.length,
     totalSuccess,
     totalFailed,
+    totalPhoneWarnings,
     rowResults,
   };
 }
