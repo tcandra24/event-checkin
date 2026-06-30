@@ -17,6 +17,7 @@ create table if not exists public.participants (
   code text not null unique,              -- kode unik yang di-encode ke QR
   status text not null default 'belum_hadir' check (status in ('belum_hadir', 'hadir')),
   checked_in_at timestamptz,
+  checked_in_by uuid references auth.users(id),  -- panitia yang melakukan scan/check-in
   wa_sent_at timestamptz,                 -- terakhir kali broadcast WA terkirim ke peserta ini
   wa_status text,                         -- status terakhir pengiriman WA: sent / failed
   -- Konfirmasi kehadiran (RSVP) yang diisi peserta sendiri lewat link publik
@@ -268,6 +269,31 @@ end;
 $$;
 
 grant execute on function public.submit_rsvp(text, boolean, integer) to anon, authenticated;
+
+-- =========================================================
+-- AKSES TERBATAS UNTUK MENAMPILKAN "SIAPA YANG CHECK-IN" / "SIAPA YANG
+-- REVIEW RSVP" DI HALAMAN LAPORAN & INPUT PESERTA
+-- =========================================================
+
+-- Tabel participants menyimpan checked_in_by/rsvp_reviewed_by/created_by
+-- sebagai UUID yang merujuk ke auth.users — tabel ini TIDAK otomatis bisa
+-- di-query langsung lewat client (Supabase sengaja menyembunyikan skema
+-- auth dari API publik). Function ini menyediakan jalan terbatas untuk
+-- panitia yang sudah login melihat EMAIL rekan panitia lain (bukan data
+-- sensitif lain seperti password hash) — hanya dipakai untuk keperluan
+-- menampilkan label "di-scan oleh ..." di UI, bukan untuk tujuan lain.
+create or replace function public.get_panitia_emails()
+returns table (id uuid, email text)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, email from auth.users;
+$$;
+
+-- Sengaja HANYA untuk authenticated (bukan anon) — daftar email panitia
+-- adalah informasi internal tim, bukan untuk halaman publik (RSVP) mana pun.
+grant execute on function public.get_panitia_emails() to authenticated;
 
 -- =========================================================
 -- SUPABASE STORAGE: bucket untuk gambar template tiket

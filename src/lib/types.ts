@@ -11,6 +11,7 @@ export interface Participant {
   code: string;
   status: ParticipantStatus;
   checked_in_at: string | null;
+  checked_in_by: string | null;
   wa_sent_at: string | null;
   wa_status: string | null;
   rsvp_status: RsvpStatus;

@@ -26,6 +26,11 @@ export async function checkInByCode(rawCode: string): Promise<ScanResult> {
   const supabase = await createClient();
   const code = extractCode(rawCode);
 
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return { success: false, error: "Sesi habis, silakan login kembali." };
+  }
+
   const { data: participant, error: findError } = await supabase.from("participants").select("*").eq("code", code).maybeSingle();
 
   if (findError) {
@@ -56,7 +61,17 @@ export async function checkInByCode(rawCode: string): Promise<ScanResult> {
   // 'hadir', kondisi WHERE untuk request lain otomatis tidak lagi
   // terpenuhi). Request lain akan mendapati 0 baris berubah, bukan ikut
   // "berhasil" memproses check-in yang sama.
-  const { data: updated, error: updateError } = await supabase.from("participants").update({ status: "hadir", checked_in_at: new Date().toISOString() }).eq("id", participant.id).eq("status", "belum_hadir").select("*").maybeSingle();
+  const { data: updated, error: updateError } = await supabase
+    .from("participants")
+    .update({
+      status: "hadir",
+      checked_in_at: new Date().toISOString(),
+      checked_in_by: userData.user.id,
+    })
+    .eq("id", participant.id)
+    .eq("status", "belum_hadir")
+    .select("*")
+    .maybeSingle();
 
   if (updateError) {
     return { success: false, error: updateError.message };

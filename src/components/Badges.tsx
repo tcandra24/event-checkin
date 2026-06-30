@@ -49,7 +49,7 @@ export function RsvpBadge({ status }: { status: RsvpStatus }) {
       );
     case "dikonfirmasi_tidak_hadir":
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-500">
           <XCircle className="h-3 w-3" />
           RSVP: Tidak hadir
         </span>

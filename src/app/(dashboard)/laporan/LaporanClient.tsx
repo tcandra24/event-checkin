@@ -7,7 +7,7 @@ import { StatusBadge, FamilyGroupBadge, QtyBadge, RsvpBadge } from "@/components
 import { formatPhoneDisplay } from "@/lib/utils";
 
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleString("id-ID", {
     day: "2-digit",
     month: "short",
@@ -16,7 +16,38 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
-export function LaporanClient({ participants }: { participants: Participant[] }) {
+/**
+ * Format respons RSVP yang diisi peserta: menampilkan jumlah orang yang
+ * dikonfirmasi dibandingkan kapasitas maksimal tiket (qty), beserta kapan
+ * peserta mengisinya. Mengembalikan null jika peserta belum pernah
+ * mengisi RSVP sama sekali (rsvp_responded_at masih kosong).
+ */
+function formatRsvpResponse(p: Participant): { summary: string; respondedAt: string } | null {
+  if (!p.rsvp_responded_at) return null;
+
+  const summary = p.rsvp_status === "dikonfirmasi_tidak_hadir" ? "0 - Tidak hadir" : `${p.rsvp_qty_response ?? 0} / ${p.qty} orang`;
+
+  return {
+    summary,
+    respondedAt: formatDateTime(p.rsvp_responded_at),
+  };
+}
+
+/**
+ * Mengubah email panitia jadi label yang lebih ringkas untuk ditampilkan
+ * di tabel (mis. "budi.santoso@gmail.com" -> "budi.santoso"), karena
+ * domain email biasanya tidak menambah informasi berguna di konteks ini.
+ * Mengembalikan "-" jika id tidak diketahui (mis. data lama sebelum fitur
+ * pencatatan checked_in_by ditambahkan, atau akun panitia sudah dihapus).
+ */
+function formatPanitiaName(userId: string | null, panitiaEmailMap: Record<string, string>): string {
+  if (!userId) return "-";
+  const email = panitiaEmailMap[userId];
+  if (!email) return "Panitia tidak diketahui";
+  return email.split("@")[0];
+}
+
+export function LaporanClient({ participants, panitiaEmailMap }: { participants: Participant[]; panitiaEmailMap: Record<string, string> }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "hadir" | "belum_hadir">("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
@@ -35,7 +66,6 @@ export function LaporanClient({ participants }: { participants: Participant[] })
     const totalTickets = participants.length;
     const hadirTickets = participants.filter((p) => p.status === "hadir");
     const hadirPeople = hadirTickets.reduce((sum, p) => sum + p.qty, 0);
-
     return {
       totalTickets,
       totalPeople,
@@ -70,7 +100,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
   }
 
   function handleExportCsv() {
-    const headers = ["Nama", "No HP", "Kursi/Meja", "Keluarga", "Qty", "Status Kehadiran", "Waktu Check-in", "Status RSVP", "Jumlah RSVP", "Kode"];
+    const headers = ["Nama", "No HP", "Kursi/Meja", "Keluarga", "Qty", "Status Kehadiran", "Waktu Check-in", "Di-scan Oleh", "Status RSVP", "Jumlah RSVP", "Waktu Isi RSVP", "Kode"];
     const rows = filtered.map((p) => [
       p.name,
       formatPhoneDisplay(p.phone),
@@ -79,8 +109,10 @@ export function LaporanClient({ participants }: { participants: Participant[] })
       p.qty,
       p.status === "hadir" ? "Hadir" : "Belum Hadir",
       formatDateTime(p.checked_in_at),
+      formatPanitiaName(p.checked_in_by, panitiaEmailMap),
       rsvpLabel(p.rsvp_status),
       p.rsvp_qty_response ?? "",
+      formatDateTime(p.rsvp_responded_at),
       p.code,
     ]);
 
@@ -200,13 +232,15 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                 <th className="px-5 py-3 font-medium">Qty</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">RSVP</th>
+                <th className="px-5 py-3 font-medium">Respon RSVP</th>
                 <th className="px-5 py-3 font-medium">Waktu Check-in</th>
+                <th className="px-5 py-3 font-medium">Di-scan Oleh</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-(--color-border)">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-(--color-slate)">
+                  <td colSpan={10} className="px-5 py-10 text-center text-sm text-(--color-slate)">
                     Tidak ada data yang cocok dengan pencarian atau filter ini.
                   </td>
                 </tr>
@@ -230,7 +264,22 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                     <td className="px-5 py-3.5">
                       <RsvpBadge status={p.rsvp_status} />
                     </td>
+                    <td className="px-5 py-3.5">
+                      {(() => {
+                        const response = formatRsvpResponse(p);
+                        if (!response) {
+                          return <span className="text-(--color-slate-light)">-</span>;
+                        }
+                        return (
+                          <div>
+                            <p className="font-medium text-(--color-ink)">{response.summary}</p>
+                            <p className="text-xs text-(--color-slate)">Diisi {response.respondedAt}</p>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-5 py-3.5 text-(--color-slate)">{formatDateTime(p.checked_in_at)}</td>
+                    <td className="px-5 py-3.5 text-(--color-slate)">{formatPanitiaName(p.checked_in_by, panitiaEmailMap)}</td>
                   </tr>
                 ))
               )}
@@ -238,7 +287,7 @@ export function LaporanClient({ participants }: { participants: Participant[] })
           </table>
         </div>
 
-        {/* CARD VIEW MOBILE — read-only, ringkas tanpa tombol aksi (laporan bersifat lihat saja) */}
+        {/* CARD VIEW MOBILE - read-only, ringkas tanpa tombol aksi (laporan bersifat lihat saja) */}
         {filtered.length === 0 ? (
           <p className="md:hidden px-5 py-10 text-center text-sm text-(--color-slate)">Tidak ada data yang cocok dengan pencarian atau filter ini.</p>
         ) : (
@@ -261,6 +310,20 @@ export function LaporanClient({ participants }: { participants: Participant[] })
                   <StatusBadge status={p.status} />
                   <RsvpBadge status={p.rsvp_status} />
                 </div>
+                {(() => {
+                  const response = formatRsvpResponse(p);
+                  if (!response) return null;
+                  return (
+                    <p className="mt-2 text-xs text-(--color-slate)">
+                      Respon RSVP: <span className="font-medium text-(--color-ink)">{response.summary}</span> · Diisi {response.respondedAt}
+                    </p>
+                  );
+                })()}
+                {p.status === "hadir" && (
+                  <p className="mt-1.5 text-xs text-(--color-slate)">
+                    Di-scan oleh: <span className="font-medium text-(--color-ink)">{formatPanitiaName(p.checked_in_by, panitiaEmailMap)}</span>
+                  </p>
+                )}
               </div>
             ))}
           </div>

@@ -28,9 +28,7 @@ function validateInput(input: ParticipantFormInput): string | null {
   return null;
 }
 
-export async function createParticipant(
-  input: ParticipantFormInput
-): Promise<ActionResult> {
+export async function createParticipant(input: ParticipantFormInput): Promise<ActionResult> {
   const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
@@ -46,11 +44,7 @@ export async function createParticipant(
   // Pastikan kode unik (retry jika ada bentrok, walau sangat kecil kemungkinannya)
   let code = generateParticipantCode();
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: existing } = await supabase
-      .from("participants")
-      .select("id")
-      .eq("code", code)
-      .maybeSingle();
+    const { data: existing } = await supabase.from("participants").select("id").eq("code", code).maybeSingle();
     if (!existing) break;
     code = generateParticipantCode();
   }
@@ -74,10 +68,7 @@ export async function createParticipant(
   return { success: true };
 }
 
-export async function updateParticipant(
-  id: string,
-  input: ParticipantFormInput
-): Promise<ActionResult> {
+export async function updateParticipant(id: string, input: ParticipantFormInput): Promise<ActionResult> {
   const supabase = await createClient();
 
   const validationError = validateInput(input);
@@ -122,10 +113,7 @@ export async function deleteParticipant(id: string): Promise<ActionResult> {
 export async function resetParticipantStatus(id: string): Promise<ActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
-    .from("participants")
-    .update({ status: "belum_hadir", checked_in_at: null })
-    .eq("id", id);
+  const { error } = await supabase.from("participants").update({ status: "belum_hadir", checked_in_at: null, checked_in_by: null }).eq("id", id);
 
   if (error) {
     return { success: false, error: error.message };
@@ -138,11 +126,28 @@ export async function resetParticipantStatus(id: string): Promise<ActionResult> 
 
 export async function getFamilyGroups(): Promise<string[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("participants")
-    .select("family_group");
+  const { data } = await supabase.from("participants").select("family_group");
 
   if (!data) return [];
   const unique = Array.from(new Set(data.map((d) => d.family_group))).sort();
   return unique;
+}
+
+/**
+ * Mengambil pemetaan id panitia (auth.users.id) ke email mereka, dipakai
+ * untuk menampilkan "di-scan oleh ..." / "disetujui oleh ..." di UI.
+ * Memakai RPC get_panitia_emails() karena tabel auth.users tidak bisa
+ * di-query langsung lewat client biasa.
+ */
+export async function getPanitiaEmailMap(): Promise<Record<string, string>> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_panitia_emails");
+
+  if (!data) return {};
+
+  const map: Record<string, string> = {};
+  for (const row of data as { id: string; email: string }[]) {
+    map[row.id] = row.email;
+  }
+  return map;
 }
