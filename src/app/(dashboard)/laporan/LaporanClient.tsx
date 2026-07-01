@@ -226,7 +226,6 @@ export function LaporanClient({ participants, panitiaEmailMap }: { participants:
             <thead>
               <tr className="border-b border-(--color-border) bg-slate-50 text-xs uppercase tracking-wide text-(--color-slate)">
                 <th className="px-5 py-3 font-medium">Nama</th>
-                <th className="px-5 py-3 font-medium">Kontak</th>
                 <th className="px-5 py-3 font-medium">Kursi/Meja</th>
                 <th className="px-5 py-3 font-medium">Keluarga</th>
                 <th className="px-5 py-3 font-medium">Qty</th>
@@ -240,7 +239,7 @@ export function LaporanClient({ participants, panitiaEmailMap }: { participants:
             <tbody className="divide-y divide-(--color-border)">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-5 py-10 text-center text-sm text-(--color-slate)">
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-(--color-slate)">
                     Tidak ada data yang cocok dengan pencarian atau filter ini.
                   </td>
                 </tr>
@@ -249,8 +248,8 @@ export function LaporanClient({ participants, panitiaEmailMap }: { participants:
                   <tr key={p.id} className="hover:bg-slate-50/60">
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-(--color-ink)">{p.name}</p>
+                      <p className="text-xs text-(--color-slate)">{formatPhoneDisplay(p.phone)}</p>
                     </td>
-                    <td className="px-5 py-3.5 text-(--color-slate)">{formatPhoneDisplay(p.phone)}</td>
                     <td className="px-5 py-3.5 font-mono text-(--color-slate)">{p.seat_number}</td>
                     <td className="px-5 py-3.5">
                       <FamilyGroupBadge familyGroup={p.family_group} />
