@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, X, Send, CheckCircle2, XCircle, Link2, Ticket, Clock } from "lucide-react";
-import { sendBroadcast, getBroadcastJobStatus, type BroadcastFilter, type BroadcastFailedItem } from "@/app/actions/broadcast";
+import { Loader2, X, Send, CheckCircle2, XCircle, Link2, Ticket, Clock, Ban } from "lucide-react";
+import { sendBroadcast, getBroadcastJobStatus, cancelBroadcastJob, type BroadcastFilter, type BroadcastFailedItem } from "@/app/actions/broadcast";
 
 type BroadcastMode = "rsvp" | "ticket";
 
@@ -46,11 +46,13 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Polling status job selama masih berjalan (queued/processing)
   useEffect(() => {
     if (!jobId) return;
-    if (progress?.status === "completed" || progress?.status === "failed") return;
+    if (progress?.status === "completed" || progress?.status === "failed" || progress?.status === "cancelled") return;
 
     const interval = setInterval(async () => {
       const res = await getBroadcastJobStatus(jobId);
@@ -101,8 +103,33 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
     });
   }
 
+  async function handleCancelBroadcast() {
+    if (!jobId) return;
+    setCancelling(true);
+    const res = await cancelBroadcastJob(jobId);
+    setCancelling(false);
+    setShowCancelConfirm(false);
+
+    if (res.success) {
+      // Ambil status terbaru segera (tidak perlu menunggu polling interval
+      // berikutnya) supaya UI langsung menampilkan status "dibatalkan".
+      const statusRes = await getBroadcastJobStatus(jobId);
+      if (statusRes.success) {
+        setProgress({
+          status: statusRes.status ?? "cancelled",
+          totalRecipients: statusRes.totalRecipients ?? 0,
+          totalSuccess: statusRes.totalSuccess ?? 0,
+          totalFailed: statusRes.totalFailed ?? 0,
+          totalPending: statusRes.totalPending ?? 0,
+          failedItems: statusRes.failedItems ?? [],
+        });
+      }
+    }
+  }
+
   const isRunning = progress && (progress.status === "queued" || progress.status === "processing");
   const isDone = progress?.status === "completed";
+  const isCancelled = progress?.status === "cancelled";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={isRunning ? undefined : onClose}>
@@ -118,16 +145,17 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
 
         {progress ? (
           <div className="px-6 py-6">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-full ${isDone ? "bg-(--color-emerald-soft)" : "bg-blue-50"}`}>
-              {isDone ? <CheckCircle2 className="h-6 w-6 text-(--color-emerald)" /> : <Clock className="h-6 w-6 text-blue-600" />}
+            <div className={`flex h-12 w-12 items-center justify-center rounded-full ${isDone ? "bg-(--color-emerald-soft)" : isCancelled ? "bg-slate-100" : "bg-blue-50"}`}>
+              {isDone ? <CheckCircle2 className="h-6 w-6 text-(--color-emerald)" /> : isCancelled ? <Ban className="h-6 w-6 text-(--color-slate)" /> : <Clock className="h-6 w-6 text-blue-600" />}
             </div>
-            <h3 className="mt-3 font-display text-base font-semibold text-(--color-ink)">{isDone ? "Broadcast selesai" : "Sedang mengirim secara bertahap..."}</h3>
+            <h3 className="mt-3 font-display text-base font-semibold text-(--color-ink)">{isDone ? "Broadcast selesai" : isCancelled ? "Broadcast dibatalkan" : "Sedang mengirim secara bertahap..."}</h3>
             {isRunning && (
               <p className="mt-1 text-sm text-(--color-slate)">
                 Pesan dikirim satu per satu dengan jeda antar pesan untuk menjaga keamanan nomor WhatsApp. Proses ini bisa berjalan beberapa menit hingga puluhan menit tergantung jumlah penerima — kamu boleh menutup halaman ini, broadcast tetap
                 berlanjut di background.
               </p>
             )}
+            {isCancelled && <p className="mt-1 text-sm text-(--color-slate)">Broadcast dihentikan sebelum semua penerima selesai diproses. Penerima yang sudah berhasil dikirimi pesan tetap tercatat di bawah ini.</p>}
 
             <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
               <div
@@ -174,7 +202,34 @@ export function BroadcastModal({ onClose, familyOptions }: { onClose: () => void
               </div>
             )}
 
-            {isDone && (
+            {isRunning && !showCancelConfirm && (
+              <button onClick={() => setShowCancelConfirm(true)} className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50">
+                <Ban className="h-4 w-4" />
+                Batalkan Broadcast
+              </button>
+            )}
+
+            {showCancelConfirm && (
+              <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-medium text-red-800">Yakin ingin membatalkan broadcast ini?</p>
+                <p className="mt-1 text-xs text-red-700">Penerima yang belum dikirimi pesan ({progress.totalPending} orang) tidak akan menerima broadcast ini sama sekali. Tindakan ini tidak bisa dibatalkan.</p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => setShowCancelConfirm(false)}
+                    disabled={cancelling}
+                    className="flex-1 rounded-lg border border-(--color-border) bg-white px-3 py-2 text-sm font-semibold text-(--color-ink) hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Tidak, lanjutkan
+                  </button>
+                  <button onClick={handleCancelBroadcast} disabled={cancelling} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
+                    {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Ya, batalkan
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(isDone || isCancelled) && (
               <button onClick={onClose} className="mt-6 w-full rounded-lg bg-(--color-ink) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">
                 Tutup
               </button>

@@ -235,6 +235,20 @@ export async function POST(req: NextRequest) {
   // inilah bagian yang menghindarkan nomor WA dari deteksi spam.
   console.log(`[broadcast] Job ${jobId}: memproses batch berisi ${pendingItems.length} item...`);
   for (const item of pendingItems) {
+    // Cek ulang status job SEBELUM memproses tiap item (bukan cuma sekali
+    // di awal function) — supaya jika job dibatalkan oleh panitia di
+    // tengah pemrosesan satu batch (mis. batch berisi 3 item, baru 1 yang
+    // terkirim saat tombol "Batalkan" diklik), 2 item sisanya di batch yang
+    // sama TIDAK ikut terkirim. Tanpa pengecekan ini, pembatalan baru
+    // benar-benar berhenti setelah seluruh batch yang sedang berjalan
+    // selesai diproses, bukan seketika.
+    const { data: currentJobStatus } = await supabase.from("broadcast_jobs").select("status").eq("id", jobId).single();
+
+    if (currentJobStatus?.status === "cancelled") {
+      console.log(`[broadcast] Job ${jobId}: dibatalkan, menghentikan pemrosesan batch ini.`);
+      return NextResponse.json({ message: "Job dibatalkan." });
+    }
+
     // @ts-expect-error -- relasi nested dari Supabase join (foreign key many-to-one ke participants)
     const participant = item.participants as Participant;
 
@@ -292,6 +306,16 @@ export async function POST(req: NextRequest) {
     const delay = randomDelay(job.delay_min_ms, job.delay_max_ms);
     console.log(`[broadcast] Menunggu ${delay}ms sebelum pesan berikutnya...`);
     await new Promise((r) => setTimeout(r, delay));
+  }
+
+  // Cek apakah job sudah dibatalkan tepat setelah batch ini selesai —
+  // jaga-jaga untuk kasus tepi di mana pembatalan terjadi persis di antara
+  // item terakhir dalam batch selesai diproses dan pengecekan berikutnya.
+  const { data: jobStatusAfterBatch } = await supabase.from("broadcast_jobs").select("status").eq("id", jobId).single();
+
+  if (jobStatusAfterBatch?.status === "cancelled") {
+    console.log(`[broadcast] Job ${jobId}: dibatalkan setelah batch ini selesai, tidak memicu batch berikutnya.`);
+    return NextResponse.json({ message: "Job dibatalkan." });
   }
 
   // Cek apakah masih ada item pending lain setelah batch ini —

@@ -19,17 +19,6 @@ export interface BroadcastFailedItem {
   reason: string;
 }
 
-export interface BroadcastJobStatusResult {
-  success: boolean;
-  error?: string;
-  status?: string;
-  totalRecipients?: number;
-  totalSuccess?: number;
-  totalFailed?: number;
-  totalPending?: number;
-  failedItems?: BroadcastFailedItem[];
-}
-
 /**
  * Membuat job broadcast baru dan mendaftarkan seluruh penerima ke dalam
  * antrian (broadcast_job_items), TANPA langsung mengirim apa pun di sini.
@@ -137,6 +126,77 @@ export async function sendBroadcast(input: { message: string; filter: BroadcastF
 }
 
 /**
+ * Membatalkan job broadcast yang sedang berjalan (status queued/processing).
+ * Tidak langsung menghentikan proses background yang sedang berjalan saat
+ * itu juga (proses berjalan sebagai panggilan HTTP terpisah yang sudah
+ * berjalan), tapi MENANDAI agar batch berikutnya yang dipicu — bahkan item
+ * berikutnya DALAM batch yang sedang berjalan — tidak lagi diproses, begitu
+ * /api/broadcast/process membaca status job ini di pemeriksaan berikutnya.
+ */
+export async function cancelBroadcastJob(jobId: string): Promise<BroadcastResult> {
+  const supabase = await createClient();
+
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return { success: false, error: "Sesi habis, silakan login kembali." };
+  }
+
+  const { data: job, error: fetchError } = await supabase.from("broadcast_jobs").select("status").eq("id", jobId).single();
+
+  if (fetchError || !job) {
+    return { success: false, error: "Job broadcast tidak ditemukan." };
+  }
+
+  if (job.status === "completed" || job.status === "cancelled" || job.status === "failed") {
+    return {
+      success: false,
+      error: "Broadcast ini sudah tidak berjalan, tidak bisa dibatalkan.",
+    };
+  }
+
+  const { error } = await supabase.from("broadcast_jobs").update({ status: "cancelled", finished_at: new Date().toISOString() }).eq("id", jobId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // Catat juga ke broadcast_logs (riwayat ringkas) supaya tetap terlihat
+  // di halaman Riwayat Broadcast walau dibatalkan di tengah jalan — hitung
+  // berapa yang sempat terkirim/gagal sebelum dibatalkan.
+  const { count: successCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "sent");
+
+  const { count: failedCount } = await supabase.from("broadcast_job_items").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "failed");
+
+  const { data: jobDetail } = await supabase.from("broadcast_jobs").select("created_by, message_template, target_filter, total_recipients").eq("id", jobId).single();
+
+  if (jobDetail) {
+    await supabase.from("broadcast_logs").insert({
+      sent_by: jobDetail.created_by,
+      message: `[DIBATALKAN] ${jobDetail.message_template}`,
+      target_filter: jobDetail.target_filter,
+      total_recipients: jobDetail.total_recipients,
+      total_success: successCount ?? 0,
+      total_failed: failedCount ?? 0,
+    });
+  }
+
+  revalidatePath("/peserta");
+  revalidatePath("/riwayat-broadcast");
+  return { success: true };
+}
+
+export interface BroadcastJobStatusResult {
+  success: boolean;
+  error?: string;
+  status?: string;
+  totalRecipients?: number;
+  totalSuccess?: number;
+  totalFailed?: number;
+  totalPending?: number;
+  failedItems?: BroadcastFailedItem[];
+}
+
+/**
  * Dipanggil berulang dari UI (polling) untuk menampilkan progres job yang
  * sedang berjalan di background.
  */
@@ -176,4 +236,43 @@ export async function getBroadcastJobStatus(jobId: string): Promise<BroadcastJob
     totalPending,
     failedItems,
   };
+}
+
+export interface BroadcastLogItem {
+  id: string;
+  sentBy: string | null;
+  message: string;
+  targetFilter: string;
+  totalRecipients: number;
+  totalSuccess: number;
+  totalFailed: number;
+  createdAt: string;
+  wasCancelled: boolean;
+}
+
+/**
+ * Mengambil riwayat seluruh broadcast yang pernah dikirim (termasuk yang
+ * dibatalkan di tengah jalan), diurutkan dari yang terbaru. Sumber datanya
+ * tabel broadcast_logs — diisi otomatis setiap kali sebuah broadcast job
+ * selesai (baik tuntas maupun dibatalkan), lihat akhir fungsi
+ * cancelBroadcastJob() dan endpoint /api/broadcast/process.
+ */
+export async function getBroadcastHistory(): Promise<BroadcastLogItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.from("broadcast_logs").select("*").order("created_at", { ascending: false }).limit(200);
+
+  if (error || !data) return [];
+
+  return data.map((log) => ({
+    id: log.id,
+    sentBy: log.sent_by,
+    message: log.message.replace(/^\[DIBATALKAN\] /, ""),
+    targetFilter: log.target_filter,
+    totalRecipients: log.total_recipients,
+    totalSuccess: log.total_success,
+    totalFailed: log.total_failed,
+    createdAt: log.created_at,
+    wasCancelled: log.message.startsWith("[DIBATALKAN] "),
+  }));
 }

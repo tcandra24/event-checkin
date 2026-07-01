@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Users, ClipboardList, QrCode, LogOut, CalendarDays, Settings } from "lucide-react";
+import { Users, ClipboardList, QrCode, LogOut, CalendarDays, Settings, History } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/laporan", label: "Laporan Kehadiran", icon: ClipboardList },
   { href: "/scan", label: "Scan QR Code", icon: QrCode },
   { href: "/pengaturan", label: "Pengaturan Tiket", icon: Settings },
+  { href: "/riwayat-broadcast", label: "Riwayat Broadcast", icon: History },
 ];
 
 export function Sidebar({ userEmail }: { userEmail?: string }) {
